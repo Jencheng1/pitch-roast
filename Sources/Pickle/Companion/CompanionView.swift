@@ -34,7 +34,7 @@ struct CompanionView: View {
                          y: 1 - abs(app.jelly) * 0.10, anchor: .bottom)
             .offset(x: app.jelly * 6)
             .animation(.interactiveSpring(response: 0.26, dampingFraction: 0.4), value: app.jelly)
-            .padding(.bottom, -6)          // nestle Pickle down toward the Dock
+            .padding(.bottom, -12)         // plant his base on the Dock's top edge
             .contentShape(Rectangle())
             .gesture(dragGesture)
         }
@@ -85,9 +85,9 @@ struct CompanionView: View {
                 .padding(.horizontal, 7).padding(.vertical, 2)
                 .background(Theme.hot)
                 .clipShape(Capsule())
-                .offset(y: 6)
+                .offset(y: -4)         // sit at his base, above the Dock (not clipped)
         case .analyzing:
-            ProgressView().controlSize(.small).offset(y: 6)
+            ProgressView().controlSize(.small).offset(y: -4)
         default:
             EmptyView()
         }

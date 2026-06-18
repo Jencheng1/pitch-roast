@@ -17,12 +17,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let companionSize = NSSize(width: 150, height: 150)
     private let panelSize = NSSize(width: 372, height: 540)
 
-    /// Height of the mascot region at the *bottom* of the companion window
-    /// (the rest is the speech-bubble zone above it). The panel anchors to the
-    /// top of this region — not the window top — so it hugs Pickle, not the
-    /// empty bubble space. Tracks the mascot frame minus the `-6` nestle inset
-    /// applied in `CompanionView`.
-    private let mascotZoneHeight: CGFloat = 98
+    /// Screen-Y of the panel's bottom, measured up from the companion window's
+    /// bottom. Tuned so the panel's glass bottom lands ~4px *behind* the top of
+    /// Pickle's head — Pickle renders above the panel, so the overlap reads as
+    /// "he's holding up the popup" with no visible gap.
+    private let panelOverlapY: CGFloat = 76
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // companion: no Dock icon
@@ -46,6 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // We drive the drag ourselves (horizontal-only, clamped, with wobble),
         // so AppKit's background dragging is off.
         companionWindow = FloatingPanel(size: companionSize, movableByBackground: false)
+        // Pickle sits one notch above the panel so, where they overlap, he
+        // renders in front and the panel reads as connected behind him.
+        companionWindow.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
         let root = CompanionView()
             .environmentObject(appState)
         companionWindow.contentView = NSHostingView(rootView: root)
@@ -65,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame          // excludes the Dock + menu bar
         let x = vf.midX - companionSize.width / 2
-        let y = vf.minY + 2                    // sit just a few px above the Dock
+        let y = vf.minY                        // window bottom on the Dock's top edge
         companionWindow.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
@@ -76,9 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let cFrame = companionWindow.frame
         var x = cFrame.midX - panelSize.width / 2
         x = min(max(x, vf.minX + 8), vf.maxX - panelSize.width - 8)
-        // Anchor to the top of the mascot region (not the empty window top) so
-        // the panel hugs Pickle with only a small gap.
-        let y = cFrame.minY + mascotZoneHeight + 4
+        // Overlap Pickle's head: the panel's glass bottom tucks just behind him,
+        // so the two read as one connected piece with no gap.
+        let y = cFrame.minY + panelOverlapY
         panelWindow.setFrameOrigin(NSPoint(x: x, y: y))
     }
 

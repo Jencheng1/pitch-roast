@@ -14,7 +14,9 @@ struct PanelView: View {
         }
         .background(Theme.pickleDeep.opacity(0.55))   // tints the vibrancy briny
         .glassPanel()
-        .padding(10)                                  // room for the shadow
+        // Shadow room on top/sides; almost none at the bottom so the glass
+        // reaches down to meet Pickle, who overlaps it there anyway.
+        .padding(.top, 10).padding(.horizontal, 10).padding(.bottom, 2)
         .frame(width: 372, height: 540)
         .preferredColorScheme(.dark)
     }
