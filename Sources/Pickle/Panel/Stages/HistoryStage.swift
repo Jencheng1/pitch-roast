@@ -33,7 +33,9 @@ struct HistoryStage: View {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { metric = m }
                 } label: {
                     Text(m.rawValue).font(.pickleCaption(11))
-                        .padding(.horizontal, 9).padding(.vertical, 6)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)     // shrink before wrapping
+                        .padding(.horizontal, 6).padding(.vertical, 6)
                         .frame(maxWidth: .infinity)
                         .background(metric == m ? Theme.brass.opacity(0.22) : .white.opacity(0.05))
                         .foregroundStyle(metric == m ? Theme.brassBright : .white.opacity(0.6))
