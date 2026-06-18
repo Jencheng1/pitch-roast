@@ -12,7 +12,7 @@ struct ProgressTracker {
         case overall = "Overall"
         case readiness = "Readiness"
         case confidence = "Confidence"
-        case presentation = "Presentation"
+        case presentation = "Delivery"
         var id: String { rawValue }
 
         var systemImage: String {
