@@ -15,7 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var grabOffsetX: CGFloat = 0      // cursor→window-origin offset at drag start
 
     private let companionSize = NSSize(width: 150, height: 150)
-    private let panelSize = NSSize(width: 372, height: 540)
+    private let panelWidth: CGFloat = 372
+    private let panelCollapsedHeight: CGFloat = 540
+    private let panelExpandedHeight: CGFloat = 760   // clamped to the screen
 
     /// Screen-Y of the panel's bottom, measured up from the companion window's
     /// bottom. Tuned so the panel's glass bottom lands ~4px *behind* the top of
@@ -54,11 +56,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func buildPanel() {
-        panelWindow = FloatingPanel(size: panelSize, movableByBackground: false)
-        let root = PanelView()
-            .environmentObject(appState)
-            .frame(width: panelSize.width, height: panelSize.height)
-        panelWindow.contentView = NSHostingView(rootView: root)
+        panelWindow = FloatingPanel(
+            size: NSSize(width: panelWidth, height: panelCollapsedHeight),
+            movableByBackground: false)
+        // The hosting view fills the window so the panel's content reflows as the
+        // window grows/shrinks on expand — width fixed, height flexible.
+        let host = NSHostingView(rootView: PanelView().environmentObject(appState))
+        host.autoresizingMask = [.width, .height]
+        panelWindow.contentView = host
     }
 
     // MARK: Placement
@@ -71,22 +76,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         companionWindow.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
-    /// Anchor the panel just above the companion, clamped to the screen.
-    private func positionPanel() {
-        guard let screen = NSScreen.main else { return }
-        let vf = screen.visibleFrame
+    /// The panel frame: bottom tucked behind Pickle's head, width fixed, height
+    /// from the collapsed/expanded state (clamped to the screen). Growing keeps
+    /// the bottom anchored, so the panel opens *upward* like a workspace.
+    private func panelFrame() -> NSRect {
+        let screen = screenForCompanion() ?? NSScreen.main
+        let vf = screen?.visibleFrame ?? companionWindow.frame
         let cFrame = companionWindow.frame
-        var x = cFrame.midX - panelSize.width / 2
-        x = min(max(x, vf.minX + 8), vf.maxX - panelSize.width - 8)
-        // Overlap Pickle's head: the panel's glass bottom tucks just behind him,
-        // so the two read as one connected piece with no gap.
-        let y = cFrame.minY + panelOverlapY
-        panelWindow.setFrameOrigin(NSPoint(x: x, y: y))
+        let bottom = cFrame.minY + panelOverlapY
+        let available = vf.maxY - bottom - 8
+        let target = appState.expanded ? panelExpandedHeight : panelCollapsedHeight
+        let height = max(panelCollapsedHeight - 1, min(target, available))
+        var x = cFrame.midX - panelWidth / 2
+        x = min(max(x, vf.minX + 8), vf.maxX - panelWidth - 8)
+        return NSRect(x: x, y: bottom, width: panelWidth, height: height)
+    }
+
+    /// Apply the panel frame, optionally animated (used for expand/collapse).
+    private func layoutPanel(animated: Bool) {
+        let frame = panelFrame()
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.34
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                panelWindow.animator().setFrame(frame, display: true)
+            }
+        } else {
+            panelWindow.setFrame(frame, display: true)
+        }
     }
 
     @objc private func screenChanged() {
         positionCompanion()
-        if appState.panelVisible { positionPanel() }
+        if appState.panelVisible { layoutPanel(animated: false) }
     }
 
     private func screenForCompanion() -> NSScreen? {
@@ -108,9 +130,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let vf = screen.visibleFrame
             var x = mouseX - grabOffsetX
             x = min(max(x, vf.minX), vf.maxX - companionSize.width)   // stay on-screen
-            let y = vf.minY + 2                                        // Y locked above the Dock
+            let y = vf.minY                                           // Y locked on the Dock
             companionWindow.setFrameOrigin(NSPoint(x: x, y: y))
-            if appState.panelVisible { positionPanel() }              // panel follows
+            if appState.panelVisible { layoutPanel(animated: false) } // panel follows
             // Lean + stretch toward the drag direction; the spring in the view
             // gives it jelly. Velocity is per-event delta, so scale it down.
             appState.jelly = max(-1, min(1, velocityX / 16))
@@ -129,7 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] visible in
                 guard let self else { return }
                 if visible {
-                    self.positionPanel()
+                    self.layoutPanel(animated: false)
                     self.panelWindow.alphaValue = 0
                     self.panelWindow.orderFront(nil)
                     NSApp.activate(ignoringOtherApps: true)   // so text fields can focus
@@ -145,6 +167,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.panelWindow.orderOut(nil)
                     })
                 }
+            }
+            .store(in: &cancellables)
+
+        // Expand / collapse — animate the window taller/shorter, bottom anchored.
+        appState.$expanded
+            .removeDuplicates()
+            .dropFirst()                       // ignore the initial value
+            .sink { [weak self] _ in
+                guard let self, self.appState.panelVisible else { return }
+                self.layoutPanel(animated: true)
             }
             .store(in: &cancellables)
     }

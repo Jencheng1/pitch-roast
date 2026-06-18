@@ -17,7 +17,8 @@ struct PanelView: View {
         // Shadow room on top/sides; almost none at the bottom so the glass
         // reaches down to meet Pickle, who overlaps it there anyway.
         .padding(.top, 10).padding(.horizontal, 10).padding(.bottom, 2)
-        .frame(width: 372, height: 540)
+        .frame(width: 372)                         // fixed width (preserved on expand)
+        .frame(maxHeight: .infinity)               // height follows the window
         .preferredColorScheme(.dark)
     }
 
@@ -34,6 +35,9 @@ struct PanelView: View {
             Spacer()
             navButton("clock.arrow.circlepath", active: app.stage == .history) { app.goHistory() }
             navButton("gearshape", active: app.stage == .settings) { app.goSettings() }
+            navButton(app.expanded ? "arrow.down.right.and.arrow.up.left"
+                                   : "arrow.up.left.and.arrow.down.right",
+                      active: app.expanded) { app.toggleExpand() }
             navButton("xmark") { app.hidePanel() }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)

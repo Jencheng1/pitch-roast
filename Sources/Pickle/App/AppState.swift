@@ -20,6 +20,7 @@ final class AppState: ObservableObject {
     // Flow
     @Published var stage: PitchStage = .welcome
     @Published var panelVisible = false
+    @Published var expanded = false                 // taller workspace mode
     @Published var selectedLength: PitchLength = .demoDay
 
     // Live + result
@@ -87,6 +88,7 @@ final class AppState: ObservableObject {
 
     func showPanel() { panelVisible = true }
     func hidePanel() { panelVisible = false }
+    func toggleExpand() { expanded.toggle() }
 
     // MARK: Recording flow
 
