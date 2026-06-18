@@ -33,7 +33,7 @@ struct WelcomeStage: View {
             Spacer(minLength: 0)
 
             if let last = app.store.latest, app.errorMessage == nil {
-                LastRunStrip(record: last) { app.result = last; app.stage = .results }
+                LastRunStrip(record: last) { app.openRecord(last) }
             }
 
             PickleButton(title: "Start Pitching", systemImage: "mic.fill") {

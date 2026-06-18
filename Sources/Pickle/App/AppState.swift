@@ -19,6 +19,7 @@ final class AppState: ObservableObject {
 
     // Flow
     @Published var stage: PitchStage = .welcome
+    @Published private(set) var navStack: [PitchStage] = []   // back history
     @Published var panelVisible = false
     @Published var expanded = false                 // taller workspace mode
     @Published var selectedLength: PitchLength = .demoDay
@@ -112,10 +113,11 @@ final class AppState: ObservableObject {
     // MARK: Recording flow
 
     func startRecording() {
-        guard canAnalyze else { stage = .settings; showPanel(); return }
+        guard canAnalyze else { navigate(to: .settings); showPanel(); return }
         voice.stop()
         errorMessage = nil
         transcriptPreview = ""
+        navStack = []                 // a new pitch starts a fresh flow
         Task {
             let ok = await recorder.start(maxSeconds: selectedLength.maxSeconds)
             if ok {
@@ -156,6 +158,7 @@ final class AppState: ObservableObject {
                 store.add(record)
                 isNewBest = record.analysis.overallScore > prevBest && store.sessions.count > 1
                 result = record
+                navStack = []           // a freshly analyzed verdict has no "back"
                 stage = .results
                 if speakFeedback { voice.speak(record.analysis.roast, openAIKey: openAIKey) }
                 try? FileManager.default.removeItem(at: url)
@@ -169,10 +172,35 @@ final class AppState: ObservableObject {
 
     // MARK: Navigation
 
-    func goWelcome() { stage = .welcome }
-    func goHistory() { stage = .history }
-    func goSettings() { stage = .settings }
-    func practiceAgain() { voice.stop(); result = nil; isNewBest = false; stage = .welcome }
+    /// Navigate, remembering where we came from so the back arrow can return.
+    func navigate(to s: PitchStage) {
+        guard s != stage else { return }
+        navStack.append(stage)
+        stage = s
+    }
+
+    var canGoBack: Bool { !navStack.isEmpty }
+
+    func goBack() {
+        guard let previous = navStack.popLast() else { return }
+        stage = previous
+    }
+
+    func goWelcome() { navigate(to: .welcome) }
+    func goHistory() { navigate(to: .history) }
+    func goSettings() { navigate(to: .settings) }
+
+    /// Open a saved run's verdict (from the welcome strip or history list).
+    func openRecord(_ record: SessionRecord) {
+        result = record
+        isNewBest = false
+        navigate(to: .results)
+    }
+
+    func practiceAgain() {
+        voice.stop(); result = nil; isNewBest = false
+        navStack = []; stage = .welcome          // start a fresh flow
+    }
 
     /// Re-speak the current roast (the speaker button on the results screen).
     func replayVoice() {

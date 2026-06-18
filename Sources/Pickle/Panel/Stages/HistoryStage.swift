@@ -96,7 +96,7 @@ struct HistoryStage: View {
             SectionLabel(title: "Recent runs", systemImage: "list.bullet")
             ForEach(app.store.sessions) { record in
                 Button {
-                    app.result = record; app.isNewBest = false; app.stage = .results
+                    app.openRecord(record)
                 } label: {
                     HStack(spacing: 10) {
                         Text("\(record.analysis.overallScore)")

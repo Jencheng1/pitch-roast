@@ -26,6 +26,10 @@ struct PanelView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
+            if app.canGoBack {
+                navButton("chevron.left") { app.goBack() }
+                    .transition(.opacity.combined(with: .move(edge: .leading)))
+            }
             PickleMascotView(mood: app.mood, audioLevel: app.recorder.level, size: 34)
                 .frame(width: 38, height: 38)
             VStack(alignment: .leading, spacing: 0) {
@@ -41,6 +45,7 @@ struct PanelView: View {
             navButton("xmark") { app.hidePanel() }
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: app.canGoBack)
     }
 
     private var subtitle: String {
