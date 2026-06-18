@@ -71,7 +71,15 @@ struct ResultsStage: View {
 
     private func roast(_ a: PitchAnalysis) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionLabel(title: "The Roast", systemImage: "flame.fill", tint: Theme.hot)
+            HStack(spacing: 8) {
+                SectionLabel(title: "The Roast", systemImage: "flame.fill", tint: Theme.hot)
+                Button { app.replayVoice() } label: {
+                    Image(systemName: app.voice.isSpeaking ? "stop.fill" : "speaker.wave.2.fill")
+                        .font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.hot)
+                }
+                .buttonStyle(.plain)
+                .help("Hear Pickle say it")
+            }
             HStack(alignment: .top, spacing: 10) {
                 PickleMascotView(mood: .roasting, size: 44).frame(width: 48, height: 48)
                 Text(a.roast)

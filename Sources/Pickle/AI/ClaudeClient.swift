@@ -3,7 +3,8 @@ import Foundation
 /// Talks to the Anthropic Messages API over raw `URLSession` (Swift has no
 /// official SDK). Uses `claude-opus-4-8` with adaptive thinking and structured
 /// outputs so the response decodes straight into `PitchAnalysis`.
-struct ClaudeClient {
+/// The optional analysis provider — users opt in via Settings.
+struct ClaudeClient: AnalysisProvider {
 
     enum ClientError: LocalizedError {
         case missingKey

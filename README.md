@@ -19,7 +19,8 @@ over time.
 ## Quick start
 
 **Requirements:** macOS 14+, Xcode 16 (for the Swift 5.9 toolchain), an
-[Anthropic API key](https://console.anthropic.com).
+[OpenAI API key](https://platform.openai.com) (one key powers transcription,
+voice, and analysis). Claude is an optional analysis engine.
 
 ```bash
 make run          # build (debug), bundle Pickle.app, and launch it
@@ -28,11 +29,13 @@ make run          # build (debug), bundle Pickle.app, and launch it
 Then:
 
 1. Pickle appears above your Dock. **Click him.**
-2. Open **⚙︎ Settings** → paste your Anthropic API key (stored in the macOS
-   Keychain — it never leaves your Mac except to call Claude).
+2. Open **⚙︎ Settings** → paste your **OpenAI API key** (stored in the macOS
+   Keychain). That one key powers transcription, Pickle's voice, and the
+   analysis — the least-config path. Prefer Claude for analysis? Switch the
+   engine in the same screen and add an Anthropic key.
 3. Pick a pitch length, hit **Start Pitching**, and talk.
-4. macOS will ask for **Microphone** and **Speech Recognition** permission the
-   first time — both are required.
+4. macOS will ask for **Microphone** permission the first time (and **Speech
+   Recognition** only if you run key-free on the on-device fallback).
 
 Other targets:
 
@@ -67,19 +70,25 @@ constructive.
 
 ---
 
-## How it works (privacy-first)
+## How it works
 
 ```
-🎙  AVAudioRecorder  →  🗣  Apple Speech (on-device)  →  🧠  Claude  →  📊  glass panel
-        audio                  transcript                  analysis        + history
+🎙  AVAudioRecorder  →  🗣  Whisper / Apple Speech  →  🧠  GPT-4o / Claude  →  🔊 TTS  →  📊  glass panel
+        audio                  transcript                   analysis            voice        + history
 ```
 
-- Your **audio** is recorded to a temp file and transcribed **on-device** with
-  Apple's Speech framework. The audio file is deleted after analysis.
-- Only the **transcript** (plus format + duration) is sent to Claude.
+- **Default (one OpenAI key):** audio → **OpenAI Whisper** (transcription) →
+  **GPT-4o** (analysis, strict JSON schema) → **OpenAI TTS** reads the roast aloud.
+- **Key-free fallback:** with no OpenAI key, transcription stays **on-device**
+  via Apple Speech and the voice uses the on-device `AVSpeechSynthesizer` — but
+  analysis needs a key (OpenAI or Claude).
+- **Optional engine:** switch analysis to **Claude (`claude-opus-4-8`)** in
+  Settings; it uses the same persona + schema.
+- The recorded **audio file is deleted** after analysis. With an OpenAI key the
+  audio is uploaded to OpenAI to transcribe; without one it never leaves the Mac.
 - Scores and history are stored **locally** in
-  `~/Library/Application Support/Pickle/sessions.json`.
-- Your API key lives in the **Keychain**.
+  `~/Library/Application Support/Pickle/sessions.json`; API keys live in the
+  **Keychain**.
 
 ---
 
@@ -91,9 +100,10 @@ Sources/Pickle/
   Companion/     PickleMascotView, CompanionView, MascotMood       ← the mascot that lives above the Dock
   Panel/         PanelView + Stages/ (Welcome, Recording,          ← the floating glass panel
                  Analyzing, Results, History, Settings)
-  Recording/     AudioRecorder, Transcriber (+ SpeechTranscriber)  ← voice capture + STT
-  AI/            ClaudeClient, PitchAnalyzer, AnalysisModels,       ← the analysis engine
-                 AnalysisSchema, PicklePrompts
+  Recording/     AudioRecorder, Transcriber (Speech + OpenAI),      ← voice capture, STT, TTS
+                 VoiceCoach (OpenAI TTS + Apple fallback)
+  AI/            AnalysisProvider, OpenAIClient, ClaudeClient,      ← the analysis engines
+                 PitchAnalyzer, AnalysisModels, AnalysisSchema, PicklePrompts
   Data/          SessionStore, SessionRecord, ProgressTracker,     ← persistence + trends
                  Keychain
   DesignSystem/  Theme, Typography, GlassBackground, Components     ← the look
@@ -116,13 +126,17 @@ mock Q&A, demo-day simulations).
 - **Accessory activation policy** (`LSUIElement`) — no Dock icon; Pickle *is* the
   presence. A non-activating floating panel never steals focus from the app
   you're rehearsing against.
-- **Voice-first** — `AVAudioRecorder` → Apple **Speech** (on-device), behind a
-  `Transcriber` protocol so whisper.cpp / cloud STT can swap in.
-- **Claude `claude-opus-4-8`** with adaptive thinking + **structured outputs**
-  (`output_config.format` JSON schema) → the response decodes straight into a
-  typed `PitchAnalysis`.
+- **Voice-first** — `AVAudioRecorder` → **OpenAI Whisper** (default) behind a
+  `Transcriber` protocol, with on-device Apple **Speech** as the key-free
+  fallback. Pickle speaks via **OpenAI TTS** / `AVSpeechSynthesizer`.
+- **Provider-agnostic analysis** — an `AnalysisProvider` protocol with two
+  engines: **OpenAI `gpt-4o`** (default) and **Claude `claude-opus-4-8`**
+  (optional), both using **strict JSON-schema structured outputs** so the
+  response decodes straight into a typed `PitchAnalysis`.
+- **Least configuration** — one OpenAI key powers transcription, voice, and
+  analysis out of the box.
 - **Local-first storage** (Codable JSON store; SwiftData is a documented drop-in)
-  and **Keychain** for the key.
+  and **Keychain** for each provider key.
 
 ---
 

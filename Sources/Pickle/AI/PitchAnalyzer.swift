@@ -4,7 +4,7 @@ import Foundation
 /// persisted `SessionRecord`. Pure async; the UI just awaits the result.
 struct PitchAnalyzer {
     var transcriber: Transcriber
-    var client: ClaudeClient
+    var provider: AnalysisProvider
 
     enum AnalyzerError: LocalizedError {
         case emptyTranscript
@@ -27,7 +27,7 @@ struct PitchAnalyzer {
         guard trimmed.count >= 4 else { throw AnalyzerError.emptyTranscript }
         onTranscript?(trimmed)
 
-        let analysis = try await client.analyze(
+        let analysis = try await provider.analyze(
             transcript: trimmed, length: length, spokenSeconds: spokenSeconds)
 
         return SessionRecord(

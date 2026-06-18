@@ -29,8 +29,20 @@ final class AppState: ObservableObject {
     @Published var errorMessage: String?
     @Published var isNewBest = false
 
-    // Config
-    @Published var hasAPIKey: Bool
+    // Config — provider + keys
+    @Published var provider: AnalysisProviderKind
+    @Published var openAIKeyPresent: Bool
+    @Published var claudeKeyPresent: Bool
+    @Published var speakFeedback: Bool
+
+    /// Analysis is gated on the selected provider's key. Transcription + voice
+    /// always have an on-device fallback, so they never block on their own.
+    var canAnalyze: Bool {
+        switch provider {
+        case .openai: return openAIKeyPresent
+        case .claude: return claudeKeyPresent
+        }
+    }
 
     // Companion jelly wobble (-1…1), set during a drag; the mascot leans + stretches.
     @Published var jelly: CGFloat = 0
@@ -42,21 +54,28 @@ final class AppState: ObservableObject {
 
     let recorder = AudioRecorder()
     let store = SessionStore()
+    let voice = VoiceCoach()
 
     private var analyzeTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
 
     init() {
-        hasAPIKey = Keychain.load() != nil
+        // OpenAI is the default analysis provider for new users.
+        provider = UserDefaults.standard.string(forKey: "analysisProvider")
+            .flatMap(AnalysisProviderKind.init(rawValue:)) ?? .openai
+        openAIKeyPresent = Keychain.load(.openAI) != nil
+        claudeKeyPresent = Keychain.load(.anthropic) != nil
+        speakFeedback = UserDefaults.standard.object(forKey: "speakFeedback") as? Bool ?? true
+
         // Re-publish nested ObservableObject changes (live mic level, session
-        // list) so views observing AppState refresh — SwiftUI doesn't bridge
-        // nested ObservableObjects automatically.
-        recorder.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
-        store.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
+        // list, speaking state) so views observing AppState refresh — SwiftUI
+        // doesn't bridge nested ObservableObjects automatically.
+        for child in [recorder.objectWillChange.eraseToAnyPublisher(),
+                      store.objectWillChange.eraseToAnyPublisher(),
+                      voice.objectWillChange.eraseToAnyPublisher()] {
+            child.sink { [weak self] _ in self?.objectWillChange.send() }
+                .store(in: &cancellables)
+        }
     }
 
     // MARK: Mood (drives the mascot everywhere)
@@ -93,7 +112,8 @@ final class AppState: ObservableObject {
     // MARK: Recording flow
 
     func startRecording() {
-        guard hasAPIKey else { stage = .settings; showPanel(); return }
+        guard canAnalyze else { stage = .settings; showPanel(); return }
+        voice.stop()
         errorMessage = nil
         transcriptPreview = ""
         Task {
@@ -118,11 +138,12 @@ final class AppState: ObservableObject {
         let length = selectedLength
         stage = .analyzing
 
+        let openAIKey = Keychain.load(.openAI)
         analyzeTask?.cancel()
         analyzeTask = Task {
             let analyzer = PitchAnalyzer(
-                transcriber: SpeechTranscriber(),
-                client: ClaudeClient(apiKey: Keychain.load())
+                transcriber: makeTranscriber(openAIKey: openAIKey),
+                provider: makeProvider(openAIKey: openAIKey)
             )
             do {
                 let record = try await analyzer.run(
@@ -136,6 +157,7 @@ final class AppState: ObservableObject {
                 isNewBest = record.analysis.overallScore > prevBest && store.sessions.count > 1
                 result = record
                 stage = .results
+                if speakFeedback { voice.speak(record.analysis.roast, openAIKey: openAIKey) }
                 try? FileManager.default.removeItem(at: url)
             } catch {
                 guard !Task.isCancelled else { return }
@@ -150,20 +172,54 @@ final class AppState: ObservableObject {
     func goWelcome() { stage = .welcome }
     func goHistory() { stage = .history }
     func goSettings() { stage = .settings }
-    func practiceAgain() { result = nil; isNewBest = false; stage = .welcome }
+    func practiceAgain() { voice.stop(); result = nil; isNewBest = false; stage = .welcome }
+
+    /// Re-speak the current roast (the speaker button on the results screen).
+    func replayVoice() {
+        guard let roast = result?.analysis.roast else { return }
+        if voice.isSpeaking { voice.stop() }
+        else { voice.speak(roast, openAIKey: Keychain.load(.openAI)) }
+    }
+
+    // MARK: Engine selection
+
+    private func makeTranscriber(openAIKey: String?) -> Transcriber {
+        if let key = openAIKey, !key.isEmpty { return OpenAITranscriber(apiKey: key) }
+        return SpeechTranscriber()                       // on-device fallback
+    }
+
+    private func makeProvider(openAIKey: String?) -> AnalysisProvider {
+        switch provider {
+        case .openai: return OpenAIClient(apiKey: openAIKey)
+        case .claude: return ClaudeClient(apiKey: Keychain.load(.anthropic))
+        }
+    }
 
     // MARK: Settings
 
-    func saveAPIKey(_ key: String) {
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        Keychain.save(trimmed)
-        hasAPIKey = true
+    func setProvider(_ p: AnalysisProviderKind) {
+        provider = p
+        UserDefaults.standard.set(p.rawValue, forKey: "analysisProvider")
         errorMessage = nil
     }
 
-    func clearAPIKey() {
-        Keychain.clear()
-        hasAPIKey = false
+    func setSpeakFeedback(_ on: Bool) {
+        speakFeedback = on
+        UserDefaults.standard.set(on, forKey: "speakFeedback")
+        if !on { voice.stop() }
     }
+
+    func saveOpenAIKey(_ key: String) {
+        let t = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        Keychain.save(t, for: .openAI); openAIKeyPresent = true; errorMessage = nil
+    }
+    func clearOpenAIKey() { Keychain.clear(.openAI); openAIKeyPresent = false }
+
+    func saveClaudeKey(_ key: String) {
+        let t = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        Keychain.save(t, for: .anthropic); claudeKeyPresent = true; errorMessage = nil
+    }
+    func clearClaudeKey() { Keychain.clear(.anthropic); claudeKeyPresent = false }
 }

@@ -1,18 +1,23 @@
 import Foundation
 import Security
 
-/// Minimal Keychain wrapper for the Anthropic API key. Keeps the secret out of
-/// UserDefaults / plist and out of the analysis transcript.
+/// Minimal Keychain wrapper for provider API keys. Keeps secrets out of
+/// UserDefaults / plists and out of the analysis transcript. Each provider's key
+/// is a separate account under one service.
 enum Keychain {
     private static let service = "com.pickle.companion"
-    private static let account = "anthropic-api-key"
 
-    static func save(_ key: String) {
+    enum Account: String {
+        case openAI = "openai-api-key"
+        case anthropic = "anthropic-api-key"
+    }
+
+    static func save(_ key: String, for account: Account) {
         let data = Data(key.utf8)
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: account.rawValue
         ]
         SecItemDelete(base as CFDictionary)
         var add = base
@@ -21,11 +26,11 @@ enum Keychain {
         SecItemAdd(add as CFDictionary, nil)
     }
 
-    static func load() -> String? {
+    static func load(_ account: Account) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: account.rawValue,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
@@ -37,11 +42,11 @@ enum Keychain {
         return key
     }
 
-    static func clear() {
+    static func clear(_ account: Account) {
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: account.rawValue
         ]
         SecItemDelete(base as CFDictionary)
     }

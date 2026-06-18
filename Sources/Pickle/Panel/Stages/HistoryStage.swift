@@ -21,7 +21,17 @@ struct HistoryStage: View {
                 }
                 .padding(16)
             }
+            .safeAreaInset(edge: .bottom) { actionBar }
         }
+    }
+
+    // Sticky primary action — same "Pitch Again" affordance as the results screen.
+    private var actionBar: some View {
+        PickleButton(title: "Pitch Again", systemImage: "arrow.clockwise", style: .primary) {
+            app.practiceAgain()
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(VisualEffectBlur(material: .hudWindow).opacity(0.9))
     }
 
     // MARK: Metric picker

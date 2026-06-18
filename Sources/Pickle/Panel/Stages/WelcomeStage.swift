@@ -40,8 +40,8 @@ struct WelcomeStage: View {
                 app.startRecording()
             }
 
-            if !app.hasAPIKey {
-                Button("Add your API key to begin →") { app.goSettings() }
+            if !app.canAnalyze {
+                Button("Add your \(app.provider.keyName) API key to begin →") { app.goSettings() }
                     .buttonStyle(.plain)
                     .font(.pickleCaption(11))
                     .foregroundStyle(Theme.brassBright)
