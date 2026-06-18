@@ -13,8 +13,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panelWindow: FloatingPanel!
     private var cancellables = Set<AnyCancellable>()
 
-    private let companionSize = NSSize(width: 150, height: 168)
+    private let companionSize = NSSize(width: 150, height: 150)
     private let panelSize = NSSize(width: 372, height: 540)
+
+    /// Height of the mascot region at the *bottom* of the companion window
+    /// (the rest is the speech-bubble zone above it). The panel anchors to the
+    /// top of this region — not the window top — so it hugs Pickle, not the
+    /// empty bubble space. Tracks the mascot frame minus the `-6` nestle inset
+    /// applied in `CompanionView`.
+    private let mascotZoneHeight: CGFloat = 98
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // companion: no Dock icon
@@ -54,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame          // excludes the Dock + menu bar
         let x = vf.midX - companionSize.width / 2
-        let y = vf.minY + 12                  // hover just above the Dock
+        let y = vf.minY + 2                    // sit just a few px above the Dock
         companionWindow.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
@@ -65,7 +72,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let cFrame = companionWindow.frame
         var x = cFrame.midX - panelSize.width / 2
         x = min(max(x, vf.minX + 8), vf.maxX - panelSize.width - 8)
-        let y = cFrame.maxY + 10
+        // Anchor to the top of the mascot region (not the empty window top) so
+        // the panel hugs Pickle with only a small gap.
+        let y = cFrame.minY + mascotZoneHeight + 4
         panelWindow.setFrameOrigin(NSPoint(x: x, y: y))
     }
 

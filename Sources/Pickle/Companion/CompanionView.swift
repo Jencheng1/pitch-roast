@@ -24,8 +24,9 @@ struct CompanionView: View {
             }
             .buttonStyle(.plain)
             .overlay(alignment: .bottom) { statusPip }
+            .padding(.bottom, -6)          // nestle Pickle down toward the Dock
         }
-        .frame(width: 150, height: 168, alignment: .bottom)
+        .frame(width: 150, height: 150, alignment: .bottom)
         .onHover { hovering in
             if hovering { flashBubble(app.mood.quip) }
             else if app.stage != .recording { showBubble = false }
