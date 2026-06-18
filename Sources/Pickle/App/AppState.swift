@@ -31,6 +31,14 @@ final class AppState: ObservableObject {
     // Config
     @Published var hasAPIKey: Bool
 
+    // Companion jelly wobble (-1…1), set during a drag; the mascot leans + stretches.
+    @Published var jelly: CGFloat = 0
+
+    // Drag wiring — set by AppDelegate, which owns the companion window.
+    var onCompanionDragBegan: (() -> Void)?
+    var onCompanionDrag: ((_ globalMouseX: CGFloat, _ velocityX: CGFloat) -> Void)?
+    var onCompanionDragEnded: (() -> Void)?
+
     let recorder = AudioRecorder()
     let store = SessionStore()
 

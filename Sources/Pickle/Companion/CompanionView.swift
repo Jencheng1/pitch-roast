@@ -1,12 +1,19 @@
 import SwiftUI
+import AppKit
 
 /// The always-present companion: Pickle hovering above the Dock with a speech
-/// bubble. Click him to open the panel. While recording he reacts to your voice;
-/// while analyzing he's lost in thought.
+/// bubble. Click him to open the panel; drag him horizontally to reposition him
+/// anywhere above the Dock — he wobbles like jelly toward the drag. While
+/// recording he reacts to your voice; while analyzing he's lost in thought.
 struct CompanionView: View {
     @EnvironmentObject private var app: AppState
     @State private var showBubble = false
     @State private var bubbleText = ""
+
+    // Drag tracking — distinguishes a click (toggle) from a drag (reposition).
+    @State private var dragGrabbed = false
+    @State private var dragMoved: CGFloat = 0
+    @State private var lastMouseX: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 4) {
@@ -15,16 +22,21 @@ struct CompanionView: View {
                 .scaleEffect(showBubble ? 1 : 0.85, anchor: .bottom)
                 .animation(.spring(response: 0.4, dampingFraction: 0.7), value: showBubble)
 
-            Button(action: tap) {
-                PickleMascotView(
-                    mood: app.mood,
-                    audioLevel: app.recorder.level,
-                    size: 80
-                )
-            }
-            .buttonStyle(.plain)
+            PickleMascotView(
+                mood: app.mood,
+                audioLevel: app.recorder.level,
+                size: 80
+            )
             .overlay(alignment: .bottom) { statusPip }
+            // Jelly: lean + stretch toward the drag, planted at the base.
+            .rotationEffect(.degrees(Double(app.jelly) * 15), anchor: .bottom)
+            .scaleEffect(x: 1 + abs(app.jelly) * 0.16,
+                         y: 1 - abs(app.jelly) * 0.10, anchor: .bottom)
+            .offset(x: app.jelly * 6)
+            .animation(.interactiveSpring(response: 0.26, dampingFraction: 0.4), value: app.jelly)
             .padding(.bottom, -6)          // nestle Pickle down toward the Dock
+            .contentShape(Rectangle())
+            .gesture(dragGesture)
         }
         .frame(width: 150, height: 150, alignment: .bottom)
         .onHover { hovering in
@@ -82,6 +94,33 @@ struct CompanionView: View {
     }
 
     // MARK: Actions
+
+    /// One gesture handles both: a short press toggles the panel; a horizontal
+    /// drag repositions Pickle. We use the cursor's absolute screen position
+    /// (via `NSEvent.mouseLocation`) so moving the window never feeds back into
+    /// the gesture's own translation.
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .onChanged { _ in
+                let mx = NSEvent.mouseLocation.x
+                if !dragGrabbed {
+                    dragGrabbed = true
+                    dragMoved = 0
+                    lastMouseX = mx
+                    app.onCompanionDragBegan?()
+                } else {
+                    let dx = mx - lastMouseX
+                    dragMoved += abs(dx)
+                    if dragMoved > 4 { app.onCompanionDrag?(mx, dx) }   // it's a drag
+                    lastMouseX = mx
+                }
+            }
+            .onEnded { _ in
+                dragGrabbed = false
+                if dragMoved <= 4 { tap() }                  // barely moved → it was a click
+                else { app.onCompanionDragEnded?() }         // release → jelly springs back
+            }
+    }
 
     private func tap() {
         Haptics.tap()

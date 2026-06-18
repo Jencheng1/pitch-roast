@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var companionWindow: FloatingPanel!
     private var panelWindow: FloatingPanel!
     private var cancellables = Set<AnyCancellable>()
+    private var grabOffsetX: CGFloat = 0      // cursor→window-origin offset at drag start
 
     private let companionSize = NSSize(width: 150, height: 150)
     private let panelSize = NSSize(width: 372, height: 540)
@@ -30,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildPanel()
         positionCompanion()
         observeState()
+        wireCompanionDrag()
 
         companionWindow.orderFrontRegardless()
 
@@ -41,7 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Build windows
 
     private func buildCompanion() {
-        companionWindow = FloatingPanel(size: companionSize, movableByBackground: true)
+        // We drive the drag ourselves (horizontal-only, clamped, with wobble),
+        // so AppKit's background dragging is off.
+        companionWindow = FloatingPanel(size: companionSize, movableByBackground: false)
         let root = CompanionView()
             .environmentObject(appState)
         companionWindow.contentView = NSHostingView(rootView: root)
@@ -81,6 +85,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func screenChanged() {
         positionCompanion()
         if appState.panelVisible { positionPanel() }
+    }
+
+    private func screenForCompanion() -> NSScreen? {
+        NSScreen.screens.first { $0.frame.intersects(companionWindow.frame) } ?? NSScreen.main
+    }
+
+    // MARK: Drag-to-reposition (horizontal, clamped, with jelly wobble)
+
+    private func wireCompanionDrag() {
+        appState.onCompanionDragBegan = { [weak self] in
+            guard let self else { return }
+            // Remember where on Pickle the cursor grabbed, so he follows the
+            // cursor instead of snapping his origin to it.
+            grabOffsetX = NSEvent.mouseLocation.x - companionWindow.frame.origin.x
+        }
+
+        appState.onCompanionDrag = { [weak self] mouseX, velocityX in
+            guard let self, let screen = screenForCompanion() else { return }
+            let vf = screen.visibleFrame
+            var x = mouseX - grabOffsetX
+            x = min(max(x, vf.minX), vf.maxX - companionSize.width)   // stay on-screen
+            let y = vf.minY + 2                                        // Y locked above the Dock
+            companionWindow.setFrameOrigin(NSPoint(x: x, y: y))
+            if appState.panelVisible { positionPanel() }              // panel follows
+            // Lean + stretch toward the drag direction; the spring in the view
+            // gives it jelly. Velocity is per-event delta, so scale it down.
+            appState.jelly = max(-1, min(1, velocityX / 16))
+        }
+
+        appState.onCompanionDragEnded = { [weak self] in
+            self?.appState.jelly = 0     // springs back, overshooting → wobble
+        }
     }
 
     // MARK: State sync
