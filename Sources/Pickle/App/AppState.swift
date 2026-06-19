@@ -48,6 +48,11 @@ final class AppState: ObservableObject {
     // Companion jelly wobble (-1…1), set during a drag; the mascot leans + stretches.
     @Published var jelly: CGFloat = 0
 
+    // Idle-wander hop transforms (driven by AppDelegate's wander timer).
+    @Published var hopLift: CGFloat = 0      // vertical offset, negative = airborne
+    @Published var hopStretch: CGFloat = 0   // + stretch tall (takeoff) / − squash flat (landing)
+    @Published var hopLean: CGFloat = 0      // −1…1 lean + rotation toward travel
+
     // Drag wiring — set by AppDelegate, which owns the companion window.
     var onCompanionDragBegan: (() -> Void)?
     var onCompanionDrag: ((_ globalMouseX: CGFloat, _ velocityX: CGFloat) -> Void)?
@@ -109,6 +114,47 @@ final class AppState: ObservableObject {
     func showPanel() { panelVisible = true }
     func hidePanel() { panelVisible = false }
     func toggleExpand() { expanded.toggle() }
+
+    // MARK: Idle wandering — the hop choreography
+
+    /// A single hop, driven by spring physics in four beats: anticipation
+    /// (lean + stretch up), airborne (rise in an arc with subtle rotation),
+    /// landing (drop + squash), and settle (spring back home with a wobble).
+    /// `direction` is −1 (left) or +1 (right). The window's horizontal travel is
+    /// timed by `AppDelegate` to land within the airborne beat.
+    func playHop(direction: CGFloat) {
+        // 1 · Takeoff — coil toward the direction and stretch upward.
+        withAnimation(.spring(response: 0.16, dampingFraction: 0.55)) {
+            hopLean = direction
+            hopStretch = 0.55
+        }
+        // 2 · Airborne — rise in a bounce arc, easing the stretch, slight rotation.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            guard let self else { return }
+            withAnimation(.spring(response: 0.30, dampingFraction: 0.60)) {
+                self.hopLift = -28
+                self.hopStretch = 0.20
+                self.hopLean = direction * 0.7
+            }
+        }
+        // 3 · Landing — come down and squash on impact.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) { [weak self] in
+            guard let self else { return }
+            withAnimation(.spring(response: 0.20, dampingFraction: 0.50)) {
+                self.hopLift = 0
+                self.hopStretch = -0.50
+                self.hopLean = direction * 0.2
+            }
+        }
+        // 4 · Settle — spring back to his normal shape with a playful wobble.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.60) { [weak self] in
+            guard let self else { return }
+            withAnimation(.spring(response: 0.50, dampingFraction: 0.42)) {
+                self.hopStretch = 0
+                self.hopLean = 0
+            }
+        }
+    }
 
     // MARK: Recording flow
 

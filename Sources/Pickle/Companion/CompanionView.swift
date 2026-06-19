@@ -28,6 +28,11 @@ struct CompanionView: View {
                 size: 80
             )
             .overlay(alignment: .bottom) { statusPip }
+            // Idle-hop: stretch/squash, lean, and lift, planted at the base.
+            .scaleEffect(x: 1 - app.hopStretch * 0.12,
+                         y: 1 + app.hopStretch * 0.18, anchor: .bottom)
+            .rotationEffect(.degrees(Double(app.hopLean) * 10), anchor: .bottom)
+            .offset(y: app.hopLift)
             // Jelly: lean + stretch toward the drag, planted at the base.
             .rotationEffect(.degrees(Double(app.jelly) * 15), anchor: .bottom)
             .scaleEffect(x: 1 + abs(app.jelly) * 0.16,

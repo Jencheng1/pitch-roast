@@ -14,6 +14,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var grabOffsetX: CGFloat = 0      // cursor→window-origin offset at drag start
 
+    // Idle wandering
+    private var companionHomeX: CGFloat = 0   // resting position he stays near / returns to
+    private var wanderTimer: Timer?
+    private var isHopping = false
+
     private let companionSize = NSSize(width: 150, height: 150)
     private let panelWidth: CGFloat = 372
     private let panelCollapsedHeight: CGFloat = 540
@@ -33,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         positionCompanion()
         observeState()
         wireCompanionDrag()
+        startWandering()
 
         companionWindow.orderFrontRegardless()
 
@@ -74,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let x = vf.midX - companionSize.width / 2
         let y = vf.minY                        // window bottom on the Dock's top edge
         companionWindow.setFrameOrigin(NSPoint(x: x, y: y))
+        companionHomeX = x                     // this is "home" for wandering
     }
 
     /// The panel frame: bottom tucked behind Pickle's head, width fixed, height
@@ -139,7 +146,95 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         appState.onCompanionDragEnded = { [weak self] in
-            self?.appState.jelly = 0     // springs back, overshooting → wobble
+            guard let self else { return }
+            appState.jelly = 0                  // springs back, overshooting → wobble
+            companionHomeX = companionWindow.frame.origin.x   // wherever you drop him is home now
+        }
+    }
+
+    // MARK: Idle wandering — when to hop
+
+    private func startWandering() {
+        // Check often; only a fraction of checks become a hop, so on average
+        // Pickle wanders about every 30 seconds — frequent enough to feel alive,
+        // with natural variation rather than a mechanical tick.
+        let t = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.maybeWander() }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        wanderTimer = t
+    }
+
+    /// Only wander when truly idle: panel closed, not recording or analyzing,
+    /// and not mid-hop.
+    private var canWander: Bool {
+        !isHopping
+            && !appState.panelVisible
+            && !appState.recorder.isRecording
+            && appState.stage != .analyzing
+    }
+
+    private func maybeWander() {
+        guard canWander else { return }
+        guard Double.random(in: 0...1) < 0.33 else { return }   // ~ every 30 seconds on average
+        performWanderJourney()
+    }
+
+    /// A little journey: 2–4 chained hops in one direction, so Pickle visibly
+    /// travels across a stretch of the Dock rather than nudging once.
+    private func performWanderJourney() {
+        guard !isHopping, let screen = screenForCompanion() else { return }
+        isHopping = true
+        let vf = screen.visibleFrame
+
+        // Head home if he's already strayed; otherwise pick a way to explore.
+        let fromHome = companionWindow.frame.origin.x - companionHomeX
+        let direction: CGFloat = abs(fromHome) > vf.width * 0.22
+            ? (fromHome > 0 ? -1 : 1)
+            : (Bool.random() ? 1 : -1)
+
+        hopSequence(remaining: Int.random(in: 2...4), direction: direction)
+    }
+
+    /// One hop of the journey, then schedules the next. Reverses at the edge of
+    /// his roaming range so the journey keeps flowing.
+    private func hopSequence(remaining: Int, direction: CGFloat) {
+        guard remaining > 0, let screen = screenForCompanion() else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.isHopping = false }
+            return
+        }
+        let vf = screen.visibleFrame
+        let maxWander = vf.width * 0.40                    // roam up to ~40% of the screen from home
+        let lo = max(companionHomeX - maxWander, vf.minX)
+        let hi = min(companionHomeX + maxWander, vf.maxX - companionSize.width)
+        let currentX = companionWindow.frame.origin.x
+
+        // Turn around if we've reached the edge of the range.
+        var dir = direction
+        if (dir > 0 && currentX >= hi - 1) || (dir < 0 && currentX <= lo + 1) { dir = -dir }
+
+        let distance = CGFloat.random(in: 50...85)
+        let targetX = min(max(currentX + dir * distance, lo), hi)
+        let travelDir: CGFloat = targetX >= currentX ? 1 : -1
+
+        appState.playHop(direction: travelDir)
+
+        // Horizontal travel during the airborne beat → reads as a hop arc.
+        // NOTE: animate via setFrame, not setFrameOrigin — only setFrame is honored
+        // by NSWindow's animation proxy (origin-only animation is a silent no-op).
+        let target = NSRect(x: targetX, y: vf.minY,
+                            width: companionSize.width, height: companionWindow.frame.height)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            guard let self else { return }
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.30
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                self.companionWindow.animator().setFrame(target, display: true)
+            }
+        }
+        // Chain into the next hop (slightly overlaps the settle → continuous bounding).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
+            self?.hopSequence(remaining: remaining - 1, direction: dir)
         }
     }
 
