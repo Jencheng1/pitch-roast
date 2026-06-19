@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Stage 4 — the verdict. Scores, the roast, the eleven dimensions, strengths,
-/// weaknesses, investor concerns, likely questions, and what to fix next.
+/// weaknesses, the questions you'll get (with concerns folded in), and what to fix next.
 struct ResultsStage: View {
     @EnvironmentObject private var app: AppState
 
@@ -16,8 +16,7 @@ struct ResultsStage: View {
                     dimensions(a)
                     highlights("Strengths", "checkmark.seal.fill", Theme.cool, a.strengths)
                     highlights("Weaknesses", "exclamationmark.triangle.fill", Theme.warm, a.weaknesses)
-                    bulletCard("Investor concerns", "eye.trianglebadge.exclamationmark", Theme.hot, a.investorConcerns)
-                    bulletCard("Likely questions", "questionmark.bubble.fill", Theme.brass, a.likelyQuestions)
+                    bulletCard("Questions you'll get", "questionmark.bubble.fill", Theme.brass, a.likelyQuestions)
                     recommendations(a)
                     transcriptDisclosure(record)
                 }

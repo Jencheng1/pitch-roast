@@ -17,8 +17,7 @@ match the schema 1:1.
 | `interestLabel` | `String` | Short interest verdict. |
 | `verdict` | `String` | One-line summary. |
 | `strengths` / `weaknesses` | `[Highlight]` | `{ title, detail }`. |
-| `investorConcerns` | `[String]` | Objections an investor would raise. |
-| `likelyQuestions` | `[String]` | Questions you'd get in the room. |
+| `likelyQuestions` | `[String]` | Top 5 questions you'd get in the room, with the investor's concerns/objections folded in as pointed questions. |
 | `recommendations` | `[Recommendation]` | `{ action, why }`, prioritized. |
 | `roast` | `String` | Brutally honest, witty, constructive. |
 | `dimensions` | `Dimensions` | The eleven judged scores. |

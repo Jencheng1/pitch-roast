@@ -63,8 +63,8 @@ timer pip and reacts to your voice; while analyzing he shows a spinner and think
    mascot.
 4. **Scorecard** — all eleven dimensions as labeled bars.
 5. **Strengths** / **Weaknesses** — titled, specific.
-6. **Investor concerns** / **Likely questions** — the objections and the questions
-   you'd actually get in the room.
+6. **Questions you'll get** — the top 5 questions you'd actually get in the room,
+   with the investor's concerns and objections folded in as pointed questions.
 7. **Fix this next** — prioritized, numbered recommendations (action + why).
 8. **What you said** — collapsible transcript.
 - Sticky action bar: **History** / **Pitch Again**.

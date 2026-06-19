@@ -12,7 +12,7 @@ enum AnalysisSchema {
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["overallScore","investorInterest","interestLabel","verdict","strengths","weaknesses","investorConcerns","likelyQuestions","recommendations","roast","dimensions"],
+      "required": ["overallScore","investorInterest","interestLabel","verdict","strengths","weaknesses","likelyQuestions","recommendations","roast","dimensions"],
       "properties": {
         "overallScore": { "type": "integer", "description": "0-100 overall quality of the pitch." },
         "investorInterest": { "type": "integer", "description": "0-100 how interested a real seed investor would be." },
@@ -42,8 +42,7 @@ enum AnalysisSchema {
             }
           }
         },
-        "investorConcerns": { "type": "array", "items": { "type": "string" } },
-        "likelyQuestions": { "type": "array", "items": { "type": "string" } },
+        "likelyQuestions": { "type": "array", "items": { "type": "string" }, "description": "The top 5 questions an investor would ask in the room, with their concerns/objections folded in as pointed questions." },
         "recommendations": {
           "type": "array",
           "items": {

@@ -35,8 +35,11 @@ enum PicklePrompts {
       "would I, as an investor, want a follow-up meeting?"
     - a one-line interestLabel and a one-sentence verdict.
     - 2-4 concrete strengths and 2-4 concrete weaknesses (title + specific detail each).
-    - 2-4 investor concerns (the objections a real investor would raise).
-    - 3-5 likely questions an investor would ask in the room.
+    - exactly the top 5 questions an investor would ask in the room. Fold the investor's \
+      concerns and objections directly into these questions — a sharp investor surfaces a \
+      concern as a pointed question, so do not produce a separate concerns list. Order them \
+      by importance, make each one distinct (no near-duplicates), and keep them specific to \
+      this pitch.
     - 3-5 prioritized, actionable recommendations (action + why it matters).
     - a "roast": 2-4 sentences, genuinely funny and brutally honest, but never cruel and \
       always landing on something the founder can act on. This is Pickle's voice at full volume.

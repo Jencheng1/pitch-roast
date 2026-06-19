@@ -84,9 +84,9 @@ founder's side. The system prompt encodes:
 - **Calibration discipline**: don't inflate — founders improve faster on truth.
 - **Format awareness**: a 30s elevator pitch isn't penalized for lacking a
   business-model breakdown; a 5-minute deep dive is.
-- **Outputs**: scores, verdict, strengths/weaknesses, investor concerns, likely
-  questions, prioritized recommendations, and the roast — all referencing what the
-  founder actually said.
+- **Outputs**: scores, verdict, strengths/weaknesses, the top 5 questions you'll
+  get (with the investor's concerns folded in), prioritized recommendations, and
+  the roast — all referencing what the founder actually said.
 
 ## Derived metrics (no extra tokens)
 

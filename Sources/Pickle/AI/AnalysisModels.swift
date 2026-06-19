@@ -9,8 +9,7 @@ struct PitchAnalysis: Codable, Equatable {
     var verdict: String              // one punchy sentence
     var strengths: [Highlight]
     var weaknesses: [Highlight]
-    var investorConcerns: [String]
-    var likelyQuestions: [String]
+    var likelyQuestions: [String]   // top 5 — folds in the investor's concerns
     var recommendations: [Recommendation]
     var roast: String                // brutally honest, witty, constructive
     var dimensions: Dimensions

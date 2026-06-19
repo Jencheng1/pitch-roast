@@ -63,9 +63,9 @@ second meeting?"), plus eleven dimensions:
 | Differentiation | Business model | Founder credibility |
 | Investor appeal | Timing (why now) | |
 
-You also get: a one-line verdict, concrete strengths & weaknesses, **investor
-concerns**, **likely questions** you'd get in the room, prioritized
-**recommendations**, and **the roast** — brutally honest, genuinely funny, always
+You also get: a one-line verdict, concrete strengths & weaknesses, the **top 5
+questions** you'd get in the room (with the investor's concerns folded in),
+prioritized **recommendations**, and **the roast** — brutally honest, genuinely funny, always
 constructive.
 
 ---
