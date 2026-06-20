@@ -15,6 +15,7 @@ struct BrainWorkspaceDetail: View {
     @State private var composerTargeted = false
     @State private var showSessionImporter = false
     @State private var showComposerImporter = false
+    @State private var enlarged: Attachment?
 
     private var s: BrainDumpSynthesis { record.synthesis }
 
@@ -67,6 +68,7 @@ struct BrainWorkspaceDetail: View {
                       allowedContentTypes: allowedTypes, allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { ingestIntoComposer(urls) }
         }
+        .sheet(item: $enlarged) { AttachmentPreview(attachment: $0) }
     }
 
     private var dropHint: some View {
@@ -100,70 +102,82 @@ struct BrainWorkspaceDetail: View {
     private var materials: some View {
         section("Materials", "paperclip", Theme.cool) {
             if record.files.isEmpty {
-                Button { showSessionImporter = true } label: {
-                    VStack(spacing: 6) {
-                        Image(systemName: "tray.and.arrow.down").font(.system(size: 20)).foregroundStyle(Theme.cool)
-                        Text("Drag in a deck, screenshots, interview notes, or research")
-                            .font(.pickleBody(13)).foregroundStyle(.white.opacity(0.6))
-                        Text("or click to choose files").font(.pickleCaption(10)).foregroundStyle(.white.opacity(0.4))
-                    }
-                    .frame(maxWidth: .infinity).padding(.vertical, 18)
-                    .background(RoundedRectangle(cornerRadius: Theme.cardCorner)
-                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5]))
-                        .foregroundStyle(.white.opacity(0.18)))
-                }
-                .buttonStyle(.plain)
+                emptyDrop
             } else {
-                ForEach(record.files) { f in fileCard(f) }
-                Button { showSessionImporter = true } label: {
-                    Label("Add files", systemImage: "plus").font(.pickleCaption(11))
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 116, maximum: 150), spacing: 16)],
+                          alignment: .leading, spacing: 16) {
+                    ForEach(record.files) { tile($0) }
+                    addTile
                 }
-                .buttonStyle(.plain).foregroundStyle(Theme.cool).padding(.top, 2)
             }
         }
     }
 
-    /// A material rendered inline: images show directly, text/PDF/doc content
-    /// expands in place — no popup.
-    private func fileCard(_ f: Attachment) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 11) {
-                Image(systemName: f.iconName).foregroundStyle(Theme.cool)
-                    .font(.system(size: 15)).frame(width: 22)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(f.name).font(.pickleBody(13)).foregroundStyle(.white).lineLimit(1)
-                    Text("\(kindLabel(f.kind)) · \(f.sizeLabel)")
-                        .font(.pickleCaption(10)).foregroundStyle(.white.opacity(0.5))
+    private var emptyDrop: some View {
+        Button { showSessionImporter = true } label: {
+            VStack(spacing: 6) {
+                Image(systemName: "tray.and.arrow.down").font(.system(size: 20)).foregroundStyle(Theme.cool)
+                Text("Drag in a deck, screenshots, interview notes, or research")
+                    .font(.pickleBody(13)).foregroundStyle(.white.opacity(0.6))
+                Text("or click to choose files").font(.pickleCaption(10)).foregroundStyle(.white.opacity(0.4))
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 18)
+            .background(RoundedRectangle(cornerRadius: Theme.cardCorner)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5]))
+                .foregroundStyle(.white.opacity(0.18)))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Finder-style tile: image thumbnail or file-type icon, name beneath.
+    /// Click to enlarge; ✕ to remove.
+    private func tile(_ f: Attachment) -> some View {
+        VStack(spacing: 6) {
+            ZStack(alignment: .topTrailing) {
+                Button { enlarged = f } label: {
+                    thumb(f)
+                        .frame(width: 96, height: 96)
+                        .background(.white.opacity(0.05))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.1), lineWidth: 1))
                 }
-                Spacer(minLength: 8)
+                .buttonStyle(.plain).help("Click to enlarge")
+
                 Button { app.removeSessionAttachment(f.id, dumpID: record.id) } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(.white.opacity(0.35))
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 15))
+                        .symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.55))
                 }
-                .buttonStyle(.plain).help("Remove")
+                .buttonStyle(.plain).padding(4).help("Remove")
             }
-            inlineContent(f)
+            Text(f.name).font(.pickleCaption(10)).foregroundStyle(.white.opacity(0.75))
+                .lineLimit(2).multilineTextAlignment(.center).frame(width: 100)
         }
-        .padding(11).glassCard()
     }
 
-    @ViewBuilder private func inlineContent(_ f: Attachment) -> some View {
+    @ViewBuilder private func thumb(_ f: Attachment) -> some View {
         if f.kind == .image, let img = decodedImage(f) {
-            Image(nsImage: img).resizable().scaledToFit()
-                .frame(maxWidth: .infinity, maxHeight: 380, alignment: .leading)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.white.opacity(0.08), lineWidth: 1))
-        } else if let text = f.extractedText, !text.isEmpty {
-            DisclosureGroup {
-                Text(text).font(.pickleBody(13)).foregroundStyle(.white.opacity(0.85))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 6)
-            } label: {
-                Text(textPreview(text)).font(.pickleBody(12))
-                    .foregroundStyle(.white.opacity(0.6)).lineLimit(2)
+            Image(nsImage: img).resizable().scaledToFill().frame(width: 96, height: 96).clipped()
+        } else {
+            VStack(spacing: 5) {
+                Image(systemName: f.iconName).font(.system(size: 32, weight: .light)).foregroundStyle(Theme.cool)
+                Text(kindLabel(f.kind).uppercased()).font(.pickleCaption(8)).tracking(0.5)
+                    .foregroundStyle(.white.opacity(0.4))
             }
-            .tint(Theme.cool)
         }
+    }
+
+    private var addTile: some View {
+        Button { showSessionImporter = true } label: {
+            VStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4]))
+                    .foregroundStyle(.white.opacity(0.22))
+                    .frame(width: 96, height: 96)
+                    .overlay(Image(systemName: "plus").font(.system(size: 22)).foregroundStyle(.white.opacity(0.45)))
+                Text("Add").font(.pickleCaption(10)).foregroundStyle(.white.opacity(0.45))
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private func pill(_ f: Attachment) -> some View {
@@ -183,12 +197,6 @@ struct BrainWorkspaceDetail: View {
     private func decodedImage(_ f: Attachment) -> NSImage? {
         guard let b = f.imageBase64, let data = Data(base64Encoded: b) else { return nil }
         return NSImage(data: data)
-    }
-
-    private func textPreview(_ text: String) -> String {
-        let flat = text.replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespaces)
-        return flat.count > 170 ? String(flat.prefix(170)) + "…" : flat
     }
 
     private func kindLabel(_ kind: Attachment.Kind) -> String {
@@ -587,6 +595,64 @@ struct PitchWorkspaceDetail: View {
             .background(tint.opacity(0.12))
             .overlay(RoundedRectangle(cornerRadius: Theme.cardCorner).strokeBorder(tint.opacity(0.28), lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous))
+    }
+}
+
+// MARK: - Attachment enlarge
+
+/// The enlarged view shown when a material tile is clicked: the full image, or
+/// the extracted text Pickle reads. (Only this content is kept, not the original
+/// file — so it works even after the source moves.)
+struct AttachmentPreview: View {
+    let attachment: Attachment
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 9) {
+                Image(systemName: attachment.iconName).foregroundStyle(Theme.cool)
+                Text(attachment.name).font(.pickleHeadline(14)).foregroundStyle(.white).lineLimit(1)
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+            .padding(14)
+            Divider().overlay(.white.opacity(0.1))
+            content
+        }
+        .frame(width: 720, height: 620)
+        .background(Theme.workspaceBackground.ignoresSafeArea())
+        .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder private var content: some View {
+        if attachment.kind == .image, let img = decodedImage {
+            ScrollView([.horizontal, .vertical]) {
+                Image(nsImage: img).resizable().scaledToFit()
+                    .frame(maxWidth: .infinity).padding(16)
+            }
+        } else if let text = attachment.extractedText, !text.isEmpty {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Extracted text Pickle reads")
+                        .font(.pickleCaption(10)).tracking(0.6).foregroundStyle(Theme.cool)
+                    Text(text).font(.pickleBody(13)).foregroundStyle(.white.opacity(0.9))
+                        .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(18)
+            }
+        } else {
+            VStack(spacing: 10) {
+                Image(systemName: "doc.questionmark").font(.system(size: 30)).foregroundStyle(.white.opacity(0.4))
+                Text("No preview available for this file.")
+                    .font(.pickleBody(13)).foregroundStyle(.white.opacity(0.6))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var decodedImage: NSImage? {
+        guard let b = attachment.imageBase64, let data = Data(base64Encoded: b) else { return nil }
+        return NSImage(data: data)
     }
 }
 
