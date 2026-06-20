@@ -30,11 +30,24 @@ struct OpenAIClient: AnalysisProvider {
         return try Self.decode(BrainDumpSynthesis.self, from: text)
     }
 
-    func reply(context: String, newThought: String) async throws -> String {
-        try await complete(
+    func reply(context: String, newThought: String, images: [ReplyImage]) async throws -> String {
+        let text = BrainDumpPrompts.replyMessage(context: context, newThought: newThought)
+        // gpt-4o vision: text part + one image_url part per attachment (data URLs).
+        let userContent: Any
+        if images.isEmpty {
+            userContent = text
+        } else {
+            var parts: [[String: Any]] = [["type": "text", "text": text]]
+            for img in images.prefix(8) {
+                parts.append(["type": "image_url",
+                              "image_url": ["url": "data:\(img.mediaType);base64,\(img.base64)"]])
+            }
+            userContent = parts
+        }
+        return try await complete(
             system: BrainDumpPrompts.replySystem,
-            user: BrainDumpPrompts.replyMessage(context: context, newThought: newThought),
-            maxTokens: 600,
+            user: userContent,
+            maxTokens: 700,
             format: nil)   // plain conversational text — no schema
     }
 
@@ -47,7 +60,7 @@ struct OpenAIClient: AnalysisProvider {
                                     "json_schema": ["name": schemaName, "strict": true, "schema": schema]])
     }
 
-    private func complete(system: String, user: String,
+    private func complete(system: String, user: Any,
                           maxTokens: Int, format: [String: Any]?) async throws -> String {
         guard let apiKey, !apiKey.isEmpty else { throw ProviderError.missingKey("OpenAI") }
 

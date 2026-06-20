@@ -371,7 +371,8 @@ final class AppState: ObservableObject {
                 guard !Task.isCancelled else { return }
                 transcriptPreview = newThought
 
-                let reply = try await provider.reply(context: context, newThought: newThought)
+                let reply = try await provider.reply(context: context, newThought: newThought,
+                                                     images: replyImages(for: existing))
                 guard !Task.isCancelled else { return }
 
                 var updated = existing
@@ -462,20 +463,59 @@ final class AppState: ObservableObject {
 
     func closeWorkspace() { workspaceOpen = false }
 
-    /// Continue a brain-dump conversation by typing (workspace). Pickle replies
-    /// to the new message; the synthesis stays put.
-    func workspaceFollowup(dumpID: UUID, text: String) {
+    /// Attach supporting materials to a session right away (the Materials tray /
+    /// a drop onto the reading pane). Loading is best-effort per file; failures
+    /// surface in `workspaceError` without dropping the ones that did read.
+    func attachToSession(_ urls: [URL], dumpID: UUID) {
+        guard !urls.isEmpty else { return }
+        workspaceError = nil
+        var loaded: [Attachment] = []
+        var failure: String?
+        for url in urls {
+            do { loaded.append(try AttachmentLoader.load(url: url)) }
+            catch { failure = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
+        }
+        if !loaded.isEmpty { brainStore.addAttachments(loaded, to: dumpID) }
+        if let failure { workspaceError = failure }
+    }
+
+    func removeSessionAttachment(_ attachmentID: UUID, dumpID: UUID) {
+        brainStore.removeAttachment(attachmentID, from: dumpID)
+    }
+
+    /// Continue a brain-dump conversation by typing (workspace), optionally with
+    /// attachments staged in the composer. Pickle replies to the new message and
+    /// can analyze the materials; the synthesis stays put. The staged files are
+    /// persisted onto the session so they inform every future reply too.
+    func workspaceFollowup(dumpID: UUID, text: String, attachments: [Attachment] = []) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty, !workspaceReplying, let rec = brainStore.record(dumpID) else { return }
+        guard !workspaceReplying, brainStore.record(dumpID) != nil else { return }
+        guard !t.isEmpty || !attachments.isEmpty else { return }
+
+        // Persist staged files first so context + vision see them this turn.
+        if !attachments.isEmpty { brainStore.addAttachments(attachments, to: dumpID) }
+        guard let rec = brainStore.record(dumpID) else { return }
+
         let context = replyContext(for: rec)
+        let images = replyImages(for: rec)
+        // What Pickle is told, and what we log in the thread (note the files).
+        let message = t.isEmpty
+            ? "I've shared some materials — take a look and tell me what you make of them."
+            : t
+        var youLog = t
+        if !attachments.isEmpty {
+            let names = attachments.map(\.name).joined(separator: ", ")
+            youLog += (t.isEmpty ? "" : "\n") + "📎 " + names
+        }
+
         let openAIKey = Keychain.load(.openAI)
         workspaceError = nil
         workspaceReplying = true
         Task {
             let provider = makeProvider(openAIKey: openAIKey)
             do {
-                let reply = try await provider.reply(context: context, newThought: t)
-                brainStore.appendTurn(BrainDumpTurn(you: t, pickle: reply), to: dumpID)
+                let reply = try await provider.reply(context: context, newThought: message, images: images)
+                brainStore.appendTurn(BrainDumpTurn(you: youLog, pickle: reply), to: dumpID)
                 if currentDumpID == dumpID { brainTurns = brainStore.record(dumpID)?.turns ?? brainTurns }
             } catch {
                 workspaceError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -494,7 +534,23 @@ final class AppState: ObservableObject {
             ctx += "\n\nRecent back-and-forth:\n"
                 + recent.map { "Founder: \($0.you)\nYou (Pickle): \($0.pickle)" }.joined(separator: "\n")
         }
+        // Fold in the text of any supporting materials (decks, notes, research).
+        let textFiles = record.files.compactMap(\.contextBlock)
+        if !textFiles.isEmpty {
+            ctx += "\n\nSupporting materials the founder attached (use them for specifics):\n"
+                + textFiles.joined(separator: "\n\n")
+        }
+        let imageNames = record.files.filter { $0.kind == .image }.map(\.name)
+        if !imageNames.isEmpty {
+            ctx += "\n\nThe founder also attached \(imageNames.count) image(s) you can see: "
+                + imageNames.joined(separator: ", ")
+        }
         return ctx
+    }
+
+    /// Image attachments on a session, as vision payloads for the reply.
+    private func replyImages(for record: BrainDumpRecord) -> [ReplyImage] {
+        record.files.compactMap(\.replyImage)
     }
 
     // MARK: Navigation

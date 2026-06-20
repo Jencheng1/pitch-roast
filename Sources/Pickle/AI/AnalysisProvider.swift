@@ -14,7 +14,16 @@ protocol AnalysisProvider {
 
     /// Continuing a brain dump: reply conversationally to a single new thought,
     /// given the prior context — no full re-synthesis. Returns plain text.
-    func reply(context: String, newThought: String) async throws -> String
+    /// `images` are attached visual materials (screenshots, deck pages) for the
+    /// model's vision; text-bearing files are already folded into `context`.
+    func reply(context: String, newThought: String, images: [ReplyImage]) async throws -> String
+}
+
+/// A base64-encoded image attachment passed to a provider's vision input.
+struct ReplyImage: Equatable {
+    let base64: String
+    let mediaType: String   // e.g. "image/jpeg"
+    let name: String
 }
 
 /// Shared error type for provider clients.

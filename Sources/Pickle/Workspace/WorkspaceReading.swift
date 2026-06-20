@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - Brain dump (read + continue the conversation)
 
@@ -8,9 +9,24 @@ struct BrainWorkspaceDetail: View {
     let record: BrainDumpRecord
 
     @State private var draft = ""
-    @State private var pending: String?     // optimistic in-flight message
+    @State private var pending: String?         // optimistic in-flight message
+    @State private var pendingFiles: [Attachment] = []   // staged for next message
+    @State private var dropTargeted = false
+    @State private var composerTargeted = false
+    @State private var showSessionImporter = false
+    @State private var showComposerImporter = false
 
     private var s: BrainDumpSynthesis { record.synthesis }
+
+    /// File types Pickle can read: decks, images, notes, research, docs.
+    private var allowedTypes: [UTType] {
+        var t: [UTType] = [.pdf, .image, .plainText, .text, .rtf,
+                           .commaSeparatedText, .json, .html, .xml]
+        for ext in ["md", "markdown", "doc", "docx", "odt"] {
+            if let u = UTType(filenameExtension: ext) { t.append(u) }
+        }
+        return t
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,6 +36,7 @@ struct BrainWorkspaceDetail: View {
                     if !s.summary.isEmpty {
                         Text(s.summary).font(.pickleBody(15)).foregroundStyle(.white.opacity(0.9))
                     }
+                    materials
                     ideas
                     bestBet
                     if let l = s.landscape { landscape(l) }
@@ -34,9 +51,31 @@ struct BrainWorkspaceDetail: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(28)
             }
+            .dropDestination(for: URL.self) { urls, _ in
+                app.attachToSession(urls, dumpID: record.id); return true
+            } isTargeted: { dropTargeted = $0 }
+            .overlay(alignment: .top) { if dropTargeted { dropHint } }
+
             composer
         }
         .onChange(of: app.workspaceReplying) { _, replying in if !replying { pending = nil } }
+        .fileImporter(isPresented: $showSessionImporter,
+                      allowedContentTypes: allowedTypes, allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result { app.attachToSession(urls, dumpID: record.id) }
+        }
+        .fileImporter(isPresented: $showComposerImporter,
+                      allowedContentTypes: allowedTypes, allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result { ingestIntoComposer(urls) }
+        }
+    }
+
+    private var dropHint: some View {
+        Label("Drop files to add to this idea", systemImage: "tray.and.arrow.down.fill")
+            .font(.pickleHeadline(12)).foregroundStyle(.white)
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(Theme.cool.opacity(0.9), in: Capsule())
+            .padding(.top, 16)
+            .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     // MARK: Header
@@ -53,6 +92,84 @@ struct BrainWorkspaceDetail: View {
                 iconButton("doc.on.doc", "Copy") { copyToClipboard(plainText(record)) }
                 iconButton("mic.fill", "Add by voice") { app.continueBrainDump(record); app.showPanel() }
             }
+        }
+    }
+
+    // MARK: Materials (attachments)
+
+    private var materials: some View {
+        section("Materials", "paperclip", Theme.cool) {
+            if record.files.isEmpty {
+                Button { showSessionImporter = true } label: {
+                    VStack(spacing: 6) {
+                        Image(systemName: "tray.and.arrow.down").font(.system(size: 20)).foregroundStyle(Theme.cool)
+                        Text("Drag in a deck, screenshots, interview notes, or research")
+                            .font(.pickleBody(13)).foregroundStyle(.white.opacity(0.6))
+                        Text("or click to choose files").font(.pickleCaption(10)).foregroundStyle(.white.opacity(0.4))
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 18)
+                    .background(RoundedRectangle(cornerRadius: Theme.cardCorner)
+                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5]))
+                        .foregroundStyle(.white.opacity(0.18)))
+                }
+                .buttonStyle(.plain)
+            } else {
+                ForEach(record.files) { f in fileRow(f) }
+                Button { showSessionImporter = true } label: {
+                    Label("Add files", systemImage: "plus").font(.pickleCaption(11))
+                }
+                .buttonStyle(.plain).foregroundStyle(Theme.cool).padding(.top, 2)
+            }
+        }
+    }
+
+    private func fileRow(_ f: Attachment) -> some View {
+        HStack(spacing: 11) {
+            Image(systemName: f.iconName).foregroundStyle(Theme.cool)
+                .font(.system(size: 15)).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(f.name).font(.pickleBody(13)).foregroundStyle(.white).lineLimit(1)
+                Text("\(kindLabel(f.kind)) · \(f.sizeLabel)")
+                    .font(.pickleCaption(10)).foregroundStyle(.white.opacity(0.5))
+            }
+            Spacer(minLength: 8)
+            Button { app.removeSessionAttachment(f.id, dumpID: record.id) } label: {
+                Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(.white.opacity(0.35))
+            }
+            .buttonStyle(.plain).help("Remove")
+        }
+        .padding(11).glassCard()
+    }
+
+    private func pill(_ f: Attachment) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: f.iconName).font(.system(size: 11)).foregroundStyle(Theme.cool)
+            Text(f.name).font(.pickleCaption(11)).foregroundStyle(.white).lineLimit(1).frame(maxWidth: 150)
+            Button { pendingFiles.removeAll { $0.id == f.id } } label: {
+                Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(.white.opacity(0.55))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 9).padding(.vertical, 6)
+        .background(Theme.cool.opacity(0.16), in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.cool.opacity(0.3), lineWidth: 1))
+    }
+
+    private func kindLabel(_ kind: Attachment.Kind) -> String {
+        switch kind {
+        case .image:    return "Image"
+        case .pdf:      return "PDF"
+        case .document: return "Document"
+        case .text:     return "Text"
+        }
+    }
+
+    /// Load dropped/imported files into the composer's staging tray.
+    private func ingestIntoComposer(_ urls: [URL]) {
+        app.workspaceError = nil
+        for url in urls {
+            do { pendingFiles.append(try AttachmentLoader.load(url: url)) }
+            catch { app.workspaceError = (error as? LocalizedError)?.errorDescription ?? "Couldn't read that file." }
         }
     }
 
@@ -188,13 +305,25 @@ struct BrainWorkspaceDetail: View {
     // MARK: Composer
 
     private var composer: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             if let err = app.workspaceError {
                 Text(err).font(.pickleCaption(11)).foregroundStyle(Theme.warm)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if !pendingFiles.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) { ForEach(pendingFiles) { pill($0) } }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
             HStack(alignment: .bottom, spacing: 10) {
-                TextField("Ask Pickle a follow-up about this idea…", text: $draft, axis: .vertical)
+                Button { showComposerImporter = true } label: {
+                    Image(systemName: "paperclip").font(.system(size: 17))
+                        .foregroundStyle(.white.opacity(0.6)).frame(height: 24)
+                }
+                .buttonStyle(.plain).help("Attach files")
+                TextField("Ask a follow-up, or drop in a deck, screenshot, or notes…",
+                          text: $draft, axis: .vertical)
                     .textFieldStyle(.plain).font(.pickleBody(14)).foregroundStyle(.white)
                     .lineLimit(1...6)
                     .onSubmit(send)
@@ -206,25 +335,39 @@ struct BrainWorkspaceDetail: View {
             }
             .padding(12)
             .background(.white.opacity(0.06))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.12), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(composerTargeted ? Theme.cool : .white.opacity(0.12),
+                              lineWidth: composerTargeted ? 1.5 : 1))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .frame(maxWidth: 760)
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 28).padding(.vertical, 14)
         .background(.black.opacity(0.25))
+        .dropDestination(for: URL.self) { urls, _ in
+            ingestIntoComposer(urls); return true
+        } isTargeted: { composerTargeted = $0 }
     }
 
     private var canSend: Bool {
-        !app.workspaceReplying && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !app.workspaceReplying else { return false }
+        return !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingFiles.isEmpty
     }
 
     private func send() {
         guard canSend else { return }
-        let text = draft
-        pending = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let files = pendingFiles
+        pending = optimisticLabel(text: text, files: files)
         draft = ""
-        app.workspaceFollowup(dumpID: record.id, text: text)
+        pendingFiles = []
+        app.workspaceFollowup(dumpID: record.id, text: text, attachments: files)
+    }
+
+    private func optimisticLabel(text: String, files: [Attachment]) -> String {
+        guard !files.isEmpty else { return text }
+        let tag = "📎 " + files.map(\.name).joined(separator: ", ")
+        return text.isEmpty ? tag : text + "\n" + tag
     }
 
     // MARK: Small building blocks

@@ -12,6 +12,7 @@ struct BrainDumpRecord: Codable, Identifiable, Equatable {
     var synthesis: BrainDumpSynthesis  // the snapshot from the first dump
     var thread: [BrainDumpTurn]?   // follow-up "add more thinking" exchanges
     var folderID: UUID?            // nil = unfiled
+    var attachments: [Attachment]? // supporting materials Pickle can analyze
 
     init(id: UUID = UUID(),
          date: Date = Date(),
@@ -20,7 +21,8 @@ struct BrainDumpRecord: Codable, Identifiable, Equatable {
          transcript: String,
          synthesis: BrainDumpSynthesis,
          thread: [BrainDumpTurn]? = nil,
-         folderID: UUID? = nil) {
+         folderID: UUID? = nil,
+         attachments: [Attachment]? = nil) {
         self.id = id
         self.date = date
         self.updatedAt = updatedAt
@@ -29,9 +31,11 @@ struct BrainDumpRecord: Codable, Identifiable, Equatable {
         self.synthesis = synthesis
         self.thread = thread
         self.folderID = folderID
+        self.attachments = attachments
     }
 
     var turns: [BrainDumpTurn] { thread ?? [] }
+    var files: [Attachment] { attachments ?? [] }
 }
 
 /// One follow-up exchange in a brain dump: what the founder added, and Pickle's

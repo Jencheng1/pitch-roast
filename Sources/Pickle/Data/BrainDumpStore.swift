@@ -59,6 +59,21 @@ final class BrainDumpStore: ObservableObject {
         saveDumps()
     }
 
+    /// Attach supporting materials to a session in place (bumps `updatedAt`).
+    func addAttachments(_ attachments: [Attachment], to id: UUID) {
+        guard !attachments.isEmpty, let i = dumps.firstIndex(where: { $0.id == id }) else { return }
+        dumps[i].attachments = (dumps[i].attachments ?? []) + attachments
+        dumps[i].updatedAt = Date()
+        saveDumps()
+    }
+
+    func removeAttachment(_ attachmentID: UUID, from id: UUID) {
+        guard let i = dumps.firstIndex(where: { $0.id == id }) else { return }
+        dumps[i].attachments?.removeAll { $0.id == attachmentID }
+        dumps[i].updatedAt = Date()
+        saveDumps()
+    }
+
     func move(_ recordID: UUID, to folderID: UUID?) {
         guard let i = dumps.firstIndex(where: { $0.id == recordID }) else { return }
         dumps[i].folderID = folderID

@@ -33,7 +33,7 @@ struct ClaudeClient: AnalysisProvider {
                  spokenSeconds: Double) async throws -> PitchAnalysis {
         let text = try await completeText(
             system: PicklePrompts.system,
-            userText: PicklePrompts.userMessage(transcript: transcript, length: length, spokenSeconds: spokenSeconds),
+            userContent: PicklePrompts.userMessage(transcript: transcript, length: length, spokenSeconds: spokenSeconds),
             schema: AnalysisSchema.object)
         return try decode(PitchAnalysis.self, from: text)
     }
@@ -42,22 +42,36 @@ struct ClaudeClient: AnalysisProvider {
                     spokenSeconds: Double) async throws -> BrainDumpSynthesis {
         let text = try await completeText(
             system: BrainDumpPrompts.system,
-            userText: BrainDumpPrompts.userMessage(transcript: transcript, spokenSeconds: spokenSeconds),
+            userContent: BrainDumpPrompts.userMessage(transcript: transcript, spokenSeconds: spokenSeconds),
             schema: BrainDumpSchema.object)
         return try decode(BrainDumpSynthesis.self, from: text)
     }
 
-    func reply(context: String, newThought: String) async throws -> String {
+    func reply(context: String, newThought: String, images: [ReplyImage]) async throws -> String {
         // Plain conversational reply — no schema, lower effort for snappiness.
-        try await completeText(
+        let text = BrainDumpPrompts.replyMessage(context: context, newThought: newThought)
+        let content: Any
+        if images.isEmpty {
+            content = text
+        } else {
+            var blocks: [[String: Any]] = [["type": "text", "text": text]]
+            for img in images.prefix(8) {
+                blocks.append(["type": "image",
+                               "source": ["type": "base64",
+                                          "media_type": img.mediaType,
+                                          "data": img.base64]])
+            }
+            content = blocks
+        }
+        return try await completeText(
             system: BrainDumpPrompts.replySystem,
-            userText: BrainDumpPrompts.replyMessage(context: context, newThought: newThought),
+            userContent: content,
             schema: nil, maxTokens: 1_024, effort: "low")
     }
 
     // MARK: Request
 
-    private func completeText(system: String, userText: String,
+    private func completeText(system: String, userContent: Any,
                               schema: Any?, maxTokens: Int = 16_000,
                               effort: String = "medium") async throws -> String {
         guard let apiKey, !apiKey.isEmpty else { throw ClientError.missingKey }
@@ -76,7 +90,7 @@ struct ClaudeClient: AnalysisProvider {
             ]],
             "thinking": ["type": "adaptive"],
             "output_config": outputConfig,
-            "messages": [["role": "user", "content": userText]]
+            "messages": [["role": "user", "content": userContent]]
         ]
 
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
