@@ -668,10 +668,10 @@ struct AttachmentPreview: View {
 
     @ViewBuilder private func content(_ f: Attachment) -> some View {
         if f.kind == .image, let img = image(for: f) {
-            ScrollView([.horizontal, .vertical]) {
-                Image(nsImage: img).resizable().scaledToFit()
-                    .frame(maxWidth: .infinity).padding(16)
-            }
+            // Fit the whole image in the viewport — aspect ratio preserved, no scroll.
+            Image(nsImage: img).resizable().scaledToFit()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(16)
         } else if let text = f.extractedText, !text.isEmpty {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
