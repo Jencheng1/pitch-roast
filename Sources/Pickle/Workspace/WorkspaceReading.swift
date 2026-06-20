@@ -70,7 +70,9 @@ struct BrainWorkspaceDetail: View {
             case .composer: ingestIntoComposer(urls)
             }
         }
-        .sheet(item: $enlarged) { AttachmentPreview(attachment: $0) }
+        .sheet(item: $enlarged) { item in
+            AttachmentPreview(attachments: record.files, initial: item)
+        }
     }
 
     private func pickFiles(_ mode: ImportMode) {
@@ -605,39 +607,72 @@ struct PitchWorkspaceDetail: View {
     }
 }
 
-// MARK: - Attachment enlarge
+// MARK: - Attachment enlarge (carousel)
 
-/// The enlarged view shown when a material tile is clicked: the full image, or
-/// the extracted text Pickle reads. (Only this content is kept, not the original
-/// file — so it works even after the source moves.)
+/// A slideshow over a session's materials: arrows / arrow-keys / a thumbnail
+/// strip step between them without leaving the view. Each frame shows the full
+/// image or the extracted text Pickle reads.
 struct AttachmentPreview: View {
-    let attachment: Attachment
+    let attachments: [Attachment]
+    @State private var index: Int
     @Environment(\.dismiss) private var dismiss
+
+    init(attachments: [Attachment], initial: Attachment) {
+        self.attachments = attachments
+        _index = State(initialValue: attachments.firstIndex(of: initial) ?? 0)
+    }
+
+    private var current: Attachment? { attachments.indices.contains(index) ? attachments[index] : nil }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 9) {
-                Image(systemName: attachment.iconName).foregroundStyle(Theme.cool)
-                Text(attachment.name).font(.pickleHeadline(14)).foregroundStyle(.white).lineLimit(1)
-                Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
-            }
-            .padding(14)
+            header
             Divider().overlay(.white.opacity(0.1))
-            content
+            ZStack {
+                if let current { content(current) }
+                HStack {
+                    navArrow("chevron.left", enabled: index > 0) { step(-1) }
+                        .keyboardShortcut(.leftArrow, modifiers: [])
+                    Spacer()
+                    navArrow("chevron.right", enabled: index < attachments.count - 1) { step(1) }
+                        .keyboardShortcut(.rightArrow, modifiers: [])
+                }
+                .padding(.horizontal, 10)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if attachments.count > 1 {
+                Divider().overlay(.white.opacity(0.1))
+                filmstrip
+            }
         }
-        .frame(width: 720, height: 620)
+        .frame(width: 780, height: 660)
         .background(Theme.workspaceBackground.ignoresSafeArea())
         .preferredColorScheme(.dark)
     }
 
-    @ViewBuilder private var content: some View {
-        if attachment.kind == .image, let img = decodedImage {
+    private var header: some View {
+        HStack(spacing: 9) {
+            if let current {
+                Image(systemName: current.iconName).foregroundStyle(Theme.cool)
+                Text(current.name).font(.pickleHeadline(14)).foregroundStyle(.white).lineLimit(1)
+            }
+            Spacer()
+            if attachments.count > 1 {
+                Text("\(index + 1) of \(attachments.count)")
+                    .font(.pickleCaption(11).monospacedDigit()).foregroundStyle(.white.opacity(0.5))
+            }
+            Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+        }
+        .padding(14)
+    }
+
+    @ViewBuilder private func content(_ f: Attachment) -> some View {
+        if f.kind == .image, let img = image(for: f) {
             ScrollView([.horizontal, .vertical]) {
                 Image(nsImage: img).resizable().scaledToFit()
                     .frame(maxWidth: .infinity).padding(16)
             }
-        } else if let text = attachment.extractedText, !text.isEmpty {
+        } else if let text = f.extractedText, !text.isEmpty {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Extracted text Pickle reads")
@@ -657,8 +692,52 @@ struct AttachmentPreview: View {
         }
     }
 
-    private var decodedImage: NSImage? {
-        guard let b = attachment.imageBase64, let data = Data(base64Encoded: b) else { return nil }
+    private var filmstrip: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(attachments.enumerated()), id: \.element.id) { i, f in
+                        Button { index = i } label: {
+                            miniThumb(f)
+                                .frame(width: 54, height: 54)
+                                .background(.white.opacity(0.05))
+                                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 7)
+                                    .strokeBorder(i == index ? Theme.cool : .white.opacity(0.12),
+                                                  lineWidth: i == index ? 2 : 1))
+                        }
+                        .buttonStyle(.plain).id(i)
+                    }
+                }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+            }
+            .onChange(of: index) { _, n in withAnimation { proxy.scrollTo(n, anchor: .center) } }
+        }
+    }
+
+    @ViewBuilder private func miniThumb(_ f: Attachment) -> some View {
+        if f.kind == .image, let img = image(for: f) {
+            Image(nsImage: img).resizable().scaledToFill().frame(width: 54, height: 54).clipped()
+        } else {
+            Image(systemName: f.iconName).font(.system(size: 20, weight: .light)).foregroundStyle(Theme.cool)
+        }
+    }
+
+    private func navArrow(_ icon: String, enabled: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                .frame(width: 38, height: 38).background(.black.opacity(0.45), in: Circle())
+        }
+        .buttonStyle(.plain).disabled(!enabled).opacity(enabled ? 1 : 0.2)
+    }
+
+    private func step(_ delta: Int) {
+        let n = index + delta
+        if attachments.indices.contains(n) { index = n }
+    }
+
+    private func image(for f: Attachment) -> NSImage? {
+        guard let b = f.imageBase64, let data = Data(base64Encoded: b) else { return nil }
         return NSImage(data: data)
     }
 }
