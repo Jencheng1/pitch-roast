@@ -5,12 +5,13 @@ import Combine
 /// Wires up the companion + panel windows, places Pickle above the Dock, and
 /// keeps the panel's visibility in sync with `AppState`.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private let appState = AppState()
 
     private var companionWindow: FloatingPanel!
     private var panelWindow: FloatingPanel!
+    private var workspaceWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
     private var grabOffsetX: CGFloat = 0      // cursor→window-origin offset at drag start
 
@@ -274,5 +275,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.layoutPanel(animated: true)
             }
             .store(in: &cancellables)
+
+        // Workspace window — a real resizable window; switches to a regular
+        // (Dock-visible) app while open, back to accessory when closed.
+        appState.$workspaceOpen
+            .removeDuplicates()
+            .sink { [weak self] open in
+                guard let self else { return }
+                if open { self.showWorkspace() } else { self.hideWorkspace() }
+            }
+            .store(in: &cancellables)
+    }
+
+    // MARK: Workspace window
+
+    private func showWorkspace() {
+        if workspaceWindow == nil { buildWorkspaceWindow() }
+        NSApp.setActivationPolicy(.regular)
+        workspaceWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func hideWorkspace() {
+        workspaceWindow?.orderOut(nil)
+        NSApp.setActivationPolicy(.accessory)        // back to lightweight companion
+        companionWindow.orderFrontRegardless()       // policy change can reshuffle z-order
+    }
+
+    private func buildWorkspaceWindow() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 980, height: 680),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered, defer: false)
+        window.title = "Pickle — Workspace"
+        window.minSize = NSSize(width: 740, height: 480)
+        window.isReleasedWhenClosed = false
+        window.titlebarAppearsTransparent = true
+        window.delegate = self
+        window.center()
+        window.contentView = NSHostingView(rootView: WorkspaceView().environmentObject(appState))
+        workspaceWindow = window
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if (notification.object as? NSWindow) === workspaceWindow {
+            appState.workspaceOpen = false           // drives hideWorkspace()
+        }
     }
 }

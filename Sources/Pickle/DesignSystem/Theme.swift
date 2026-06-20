@@ -49,6 +49,12 @@ enum Theme {
         startPoint: .top, endPoint: .bottom
     )
 
+    /// Solid dark brand backdrop for the desk-scale workspace window.
+    static let workspaceBackground = LinearGradient(
+        colors: [pickleDeep.opacity(0.5), Color(hex: 0x0D110B)],
+        startPoint: .top, endPoint: .bottom
+    )
+
     static func ringGradient(for score: Int) -> AngularGradient {
         let c = scoreColor(score)
         return AngularGradient(

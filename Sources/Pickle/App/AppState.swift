@@ -27,6 +27,12 @@ struct PickleToast: Equatable {
     var dumpID: UUID?
 }
 
+/// What's open in the larger workspace window.
+enum WorkspaceSelection: Hashable {
+    case brain(UUID)
+    case pitch(UUID)
+}
+
 /// Central app state + coordinator. Owns the recorder, the store, the analysis
 /// pipeline, and the current flow. Both the companion and the panel observe it.
 @MainActor
@@ -51,6 +57,12 @@ final class AppState: ObservableObject {
     @Published var landscapeLoading = false         // true while the live competitor search runs
     @Published var toast: PickleToast?              // transient "ready" notification
     @Published var expandRecap = false              // request the results view to open its recap
+
+    // Workspace window (the larger founder workspace)
+    @Published var workspaceOpen = false
+    @Published var workspaceSelection: WorkspaceSelection?
+    @Published var workspaceReplying = false
+    @Published var workspaceError: String?
     private var continuingDumpID: UUID?             // set while adding on to a dump
     @Published var errorMessage: String?
     @Published var isNewBest = false
@@ -436,6 +448,41 @@ final class AppState: ObservableObject {
     }
 
     func dismissToast() { toast = nil }
+
+    // MARK: Workspace
+
+    func openWorkspace() {
+        if workspaceSelection == nil {
+            if let id = currentDumpID { workspaceSelection = .brain(id) }
+            else if let d = brainStore.latest { workspaceSelection = .brain(d.id) }
+            else if let p = store.latest { workspaceSelection = .pitch(p.id) }
+        }
+        workspaceOpen = true
+    }
+
+    func closeWorkspace() { workspaceOpen = false }
+
+    /// Continue a brain-dump conversation by typing (workspace). Pickle replies
+    /// to the new message; the synthesis stays put.
+    func workspaceFollowup(dumpID: UUID, text: String) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, !workspaceReplying, let rec = brainStore.record(dumpID) else { return }
+        let context = replyContext(for: rec)
+        let openAIKey = Keychain.load(.openAI)
+        workspaceError = nil
+        workspaceReplying = true
+        Task {
+            let provider = makeProvider(openAIKey: openAIKey)
+            do {
+                let reply = try await provider.reply(context: context, newThought: t)
+                brainStore.appendTurn(BrainDumpTurn(you: t, pickle: reply), to: dumpID)
+                if currentDumpID == dumpID { brainTurns = brainStore.record(dumpID)?.turns ?? brainTurns }
+            } catch {
+                workspaceError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+            workspaceReplying = false
+        }
+    }
 
     /// A compact context string for the reply: where their thinking stands plus
     /// the last couple of exchanges.

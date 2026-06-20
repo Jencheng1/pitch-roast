@@ -51,6 +51,14 @@ final class BrainDumpStore: ObservableObject {
         saveDumps()
     }
 
+    /// Append a conversation turn in place (no reorder; bumps `updatedAt`).
+    func appendTurn(_ turn: BrainDumpTurn, to id: UUID) {
+        guard let i = dumps.firstIndex(where: { $0.id == id }) else { return }
+        dumps[i].thread = (dumps[i].thread ?? []) + [turn]
+        dumps[i].updatedAt = Date()
+        saveDumps()
+    }
+
     func move(_ recordID: UUID, to folderID: UUID?) {
         guard let i = dumps.firstIndex(where: { $0.id == recordID }) else { return }
         dumps[i].folderID = folderID

@@ -45,6 +45,7 @@ struct PanelView: View {
                 Text(subtitle).font(.pickleCaption(10)).foregroundStyle(.white.opacity(0.55))
             }
             Spacer()
+            navButton("macwindow") { app.openWorkspace() }
             navButton("clock.arrow.circlepath", active: app.stage == .history) { app.goHistory() }
             navButton("gearshape", active: app.stage == .settings) { app.goSettings() }
             navButton(app.expanded ? "arrow.down.right.and.arrow.up.left"
