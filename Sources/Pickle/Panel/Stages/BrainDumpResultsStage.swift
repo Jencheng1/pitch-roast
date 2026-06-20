@@ -9,35 +9,40 @@ struct BrainDumpResultsStage: View {
 
     var body: some View {
         if let s = app.brainResult {
-            ScrollView {
-                VStack(spacing: 14) {
-                    header(s)
-                    if app.brainTurns.isEmpty {
-                        // Fresh dump — show the full synthesis.
-                        recapStack(s)
-                    } else {
-                        // Once a conversation is going, the thread leads and the
-                        // original brainstorm collapses into a dropdown.
-                        threadSection
-                        recapDisclosure(s)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 14) {
+                        header(s)
+                        if app.brainTurns.isEmpty {
+                            // Fresh dump — show the full synthesis.
+                            recapStack(s)
+                        } else {
+                            // Once a conversation is going, the thread leads and the
+                            // original brainstorm collapses into a dropdown.
+                            threadSection
+                            recapDisclosure(s)
+                        }
+                        transcriptDisclosure
                     }
-                    transcriptDisclosure
+                    .padding(16)
                 }
-                .padding(16)
+                .safeAreaInset(edge: .bottom) { actionBar }
+                .onAppear { handleExpandRequest(proxy) }
+                .onChange(of: app.expandRecap) { _, _ in handleExpandRequest(proxy) }
             }
-            .safeAreaInset(edge: .bottom) { actionBar }
-            .onAppear(perform: syncRecapExpansion)
-            .onChange(of: app.expandRecap) { _, _ in syncRecapExpansion() }
         } else {
             EmptyView()
         }
     }
 
-    /// Honor a request (e.g. from the competitor-scan toast) to open the recap.
-    private func syncRecapExpansion() {
-        if app.expandRecap {
-            withAnimation { recapExpanded = true }
-            app.expandRecap = false
+    /// Honor a request (e.g. from the competitor-scan toast): open the recap if
+    /// it's collapsed, then scroll the landscape into view.
+    private func handleExpandRequest(_ proxy: ScrollViewProxy) {
+        guard app.expandRecap else { return }
+        app.expandRecap = false
+        withAnimation { recapExpanded = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            withAnimation { proxy.scrollTo("landscape", anchor: .top) }
         }
     }
 
@@ -47,7 +52,7 @@ struct BrainDumpResultsStage: View {
         summary(s)
         ideas(s)
         bestBet(s)
-        if let l = s.landscape { landscape(l) }
+        if let l = s.landscape { landscape(l).id("landscape") }
         themes(s)
         bulletCard("Pains worth chasing", "person.crop.circle.badge.exclamationmark", Theme.warm, s.painPoints)
         bulletCard("Open questions", "questionmark.bubble.fill", Theme.brass, s.openQuestions)

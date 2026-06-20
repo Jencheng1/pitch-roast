@@ -399,6 +399,13 @@ final class AppState: ObservableObject {
                 var live = try await researcher.research(
                     ideaName: idea.name, problem: idea.problem, category: baseCategory ?? idea.name,
                     customer: idea.audience, valueProp: idea.valueProp)
+                // Only accept a *useful* result — an empty search (no players /
+                // no category) shouldn't overwrite the knowledge landscape or
+                // raise a "ready" toast.
+                guard !live.players.isEmpty,
+                      !live.category.trimmingCharacters(in: .whitespaces).isEmpty
+                else { throw ProviderError.noContent }
+
                 live.live = true
                 if var rec = brainStore.record(dumpID) {
                     rec.synthesis.landscape = live
@@ -407,12 +414,11 @@ final class AppState: ObservableObject {
                 if currentDumpID == dumpID { brainResult?.landscape = live }
                 let count = live.players.count
                 toast = PickleToast(
-                    message: count > 0
-                        ? "Competitor scan's in — \(count) player\(count == 1 ? "" : "s") found. See where it sits →"
-                        : "Competitor scan's in — see where it sits →",
+                    message: "Competitor scan's in — \(count) player\(count == 1 ? "" : "s") found. See where it sits →",
                     icon: "map.fill", dumpID: dumpID)
             } catch {
-                // Keep the knowledge-based landscape that's already on screen.
+                // Search failed or came back empty — keep the knowledge-based
+                // landscape that's already on screen (no toast, no LIVE badge).
             }
             landscapeLoading = false
         }
