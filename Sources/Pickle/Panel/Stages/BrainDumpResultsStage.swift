@@ -190,78 +190,125 @@ struct BrainDumpResultsStage: View {
                 if app.landscapeLoading {
                     HStack(spacing: 4) {
                         ProgressView().controlSize(.small)
-                        Text("scouting the web…").font(.pickleCaption(10)).foregroundStyle(Theme.cool)
+                        Text("scouting…").font(.pickleCaption(10)).foregroundStyle(Theme.cool)
                     }
-                } else if l.live == true {
-                    Chip(text: "LIVE", systemImage: "dot.radiowaves.left.and.right", tint: Theme.cool)
-                } else {
-                    Chip(text: "FROM MEMORY", systemImage: "brain", tint: .white.opacity(0.4))
                 }
             }
 
-            // Category + how-crowded gauge + the read.
-            VStack(alignment: .leading, spacing: 8) {
+            // Concise, scannable summary (default view, < 50 words).
+            VStack(alignment: .leading, spacing: 9) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(l.category).font(.pickleHeadline(13)).foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
-                    Text("\(l.saturation)% crowded")
-                        .font(.pickleCaption(10).monospacedDigit())
-                        .foregroundStyle(crowdColor(l.saturation))
+                    Text(saturationPhrase(l.saturation))
+                        .font(.pickleCaption(10)).foregroundStyle(crowdColor(l.saturation))
                 }
-                crowdBar(l.saturation)
-                Text(l.marketRead)
-                    .font(.pickleBody(12)).foregroundStyle(.white.opacity(0.8))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(11).glassCard()
 
-            // Existing players.
-            ForEach(l.players) { p in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(p.name).font(.pickleHeadline(12)).foregroundStyle(.white)
-                        Spacer(minLength: 8)
-                        Chip(text: p.relationship, tint: relationshipColor(p.relationship))
+                if l.players.isEmpty {
+                    Text("No clear direct competitors identified")
+                        .font(.pickleBody(12)).foregroundStyle(.white.opacity(0.7))
+                } else {
+                    competitorChips(l.players)
+                }
+
+                if let insight = keyInsight(l) {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "sparkles").font(.system(size: 11)).foregroundStyle(Theme.brassBright)
+                        Text(insight).font(.pickleBody(12)).foregroundStyle(.white.opacity(0.9))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    Text(p.what).font(.pickleBody(12)).foregroundStyle(.white.opacity(0.78))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("Gap: \(p.gap)").font(.pickleCaption(11)).foregroundStyle(.white.opacity(0.55))
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let url = p.url, let link = playerURL(url) {
-                        Link(destination: link) {
-                            HStack(spacing: 3) {
-                                Image(systemName: "arrow.up.right")
-                                Text(prettyDomain(url))
-                            }
-                            .font(.pickleCaption(10)).foregroundStyle(Theme.cool)
+                }
+            }
+            .padding(12).glassCard()
+
+            // Detailed reasoning, on demand.
+            if hasDetail(l) {
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if !l.marketRead.isEmpty {
+                            Text(l.marketRead).font(.pickleBody(12)).foregroundStyle(.white.opacity(0.8))
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        .buttonStyle(.plain)
+                        ForEach(l.players) { playerCard($0) }
+                        bulletCard("Open lanes", "arrow.up.right.circle.fill", Theme.cool, l.whitespace)
+                        bulletCard("Why it could win", "checkmark.seal.fill", Theme.brassBright, l.edge)
                     }
+                    .padding(.top, 8)
+                } label: {
+                    Text("See full analysis").font(.pickleCaption(11)).foregroundStyle(Theme.cool)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(11).glassCard()
+                .tint(Theme.cool)
+                .padding(12).glassCard()
             }
+        }
+    }
 
-            bulletCard("Open lanes", "arrow.up.right.circle.fill", Theme.cool, l.whitespace)
-            bulletCard("Why it could win", "checkmark.seal.fill", Theme.brassBright, l.edge)
+    private func competitorChips(_ players: [BrainDumpSynthesis.Player]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(players.prefix(3)) { p in
+                    Chip(text: p.name, tint: relationshipColor(p.relationship))
+                }
+                if players.count > 3 {
+                    Chip(text: "+\(players.count - 3) more", tint: .white.opacity(0.4))
+                }
+            }
+        }
+    }
+
+    private func playerCard(_ p: BrainDumpSynthesis.Player) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(p.name).font(.pickleHeadline(12)).foregroundStyle(.white)
+                Spacer(minLength: 8)
+                Chip(text: p.relationship, tint: relationshipColor(p.relationship))
+            }
+            Text(p.what).font(.pickleBody(12)).foregroundStyle(.white.opacity(0.78))
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Gap: \(p.gap)").font(.pickleCaption(11)).foregroundStyle(.white.opacity(0.55))
+                .fixedSize(horizontal: false, vertical: true)
+            if let url = p.url, let link = playerURL(url) {
+                Link(destination: link) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.up.right")
+                        Text(prettyDomain(url))
+                    }
+                    .font(.pickleCaption(10)).foregroundStyle(Theme.cool)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(11).glassCard()
+    }
+
+    private func hasDetail(_ l: BrainDumpSynthesis.Landscape) -> Bool {
+        !l.players.isEmpty || !l.marketRead.isEmpty || !l.whitespace.isEmpty || !l.edge.isEmpty
+    }
+
+    /// The single most useful takeaway, surfaced in the default view.
+    private func keyInsight(_ l: BrainDumpSynthesis.Landscape) -> String? {
+        if let edge = l.edge.first, !edge.isEmpty { return edge }
+        if let lane = l.whitespace.first, !lane.isEmpty { return lane }
+        let s = l.marketRead.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+        if let dot = s.firstIndex(of: ".") { return String(s[...dot]) }  // first sentence
+        return s
+    }
+
+    private func saturationPhrase(_ saturation: Int) -> String {
+        switch min(max(saturation, 0), 100) {
+        case ..<30:   return "wide open"
+        case 30..<55: return "some players"
+        case 55..<78: return "fairly crowded"
+        default:      return "very crowded"
         }
     }
 
     /// High saturation reads "hot/contested"; low reads "open/green".
     private func crowdColor(_ saturation: Int) -> Color {
         Theme.scoreColor(100 - min(max(saturation, 0), 100))
-    }
-
-    private func crowdBar(_ saturation: Int) -> some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(.white.opacity(0.10))
-                Capsule().fill(crowdColor(saturation))
-                    .frame(width: geo.size.width * CGFloat(min(max(saturation, 0), 100)) / 100)
-            }
-        }
-        .frame(height: 6)
     }
 
     private func relationshipColor(_ relationship: String) -> Color {
