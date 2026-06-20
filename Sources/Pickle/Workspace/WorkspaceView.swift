@@ -25,15 +25,34 @@ struct WorkspaceView: View {
 struct WorkspaceSidebar: View {
     @EnvironmentObject private var app: AppState
 
+    @State private var showNewFolder = false
+    @State private var newFolderName = ""
+    @State private var renaming: BrainDumpFolder?
+    @State private var renameText = ""
+
+    private var unfiled: [BrainDumpRecord] { app.brainStore.dumps.filter { $0.folderID == nil } }
+
     var body: some View {
         List(selection: $app.workspaceSelection) {
-            if !app.brainStore.dumps.isEmpty {
-                Section("Brain dumps") {
-                    ForEach(app.brainStore.dumps) { d in
-                        brainRow(d).tag(WorkspaceSelection.brain(d.id))
+            // One section per folder, then loose ("Unfiled") brain dumps.
+            ForEach(app.brainStore.folders) { folder in
+                let dumps = app.brainStore.dumps.filter { $0.folderID == folder.id }
+                Section {
+                    if dumps.isEmpty {
+                        Text("Empty — move a brain dump here")
+                            .font(.pickleCaption(10)).foregroundStyle(.secondary).italic()
+                    } else {
+                        ForEach(dumps) { d in brainRow(d).tag(WorkspaceSelection.brain(d.id)) }
                     }
+                } header: { folderHeader(folder, count: dumps.count) }
+            }
+
+            if !unfiled.isEmpty {
+                Section(app.brainStore.folders.isEmpty ? "Brain dumps" : "Unfiled") {
+                    ForEach(unfiled) { d in brainRow(d).tag(WorkspaceSelection.brain(d.id)) }
                 }
             }
+
             if !app.store.sessions.isEmpty {
                 Section("Pitches") {
                     ForEach(app.store.sessions) { p in
@@ -44,16 +63,68 @@ struct WorkspaceSidebar: View {
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {
-            Button {
-                app.newBrainDump(); app.showPanel()
-            } label: {
-                Label("New brain dump", systemImage: "plus")
-                    .font(.pickleHeadline(12))
-                    .frame(maxWidth: .infinity).padding(.vertical, 7)
+            HStack(spacing: 8) {
+                Button {
+                    app.newBrainDump(); app.showPanel()
+                } label: {
+                    Label("New brain dump", systemImage: "plus")
+                        .font(.pickleHeadline(12))
+                        .frame(maxWidth: .infinity).padding(.vertical, 7)
+                }
+                .buttonStyle(.borderedProminent).tint(Theme.pickle)
+
+                Button {
+                    newFolderName = ""; showNewFolder = true
+                } label: {
+                    Image(systemName: "folder.badge.plus")
+                        .font(.system(size: 13, weight: .semibold)).padding(.vertical, 6).padding(.horizontal, 2)
+                }
+                .buttonStyle(.bordered).tint(Theme.brass).help("New folder")
             }
-            .buttonStyle(.borderedProminent).tint(Theme.pickle)
             .padding(10)
         }
+        .alert("New folder", isPresented: $showNewFolder) {
+            TextField("Folder name", text: $newFolderName)
+            Button("Create") { createFolder() }
+            Button("Cancel", role: .cancel) { newFolderName = "" }
+        }
+        .alert("Rename folder", isPresented: Binding(
+            get: { renaming != nil },
+            set: { if !$0 { renaming = nil } })) {
+            TextField("Folder name", text: $renameText)
+            Button("Rename") {
+                if let f = renaming {
+                    let n = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !n.isEmpty { app.brainStore.renameFolder(f.id, to: n) }
+                }
+                renaming = nil
+            }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        }
+    }
+
+    private func folderHeader(_ folder: BrainDumpFolder, count: Int) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "folder.fill").font(.system(size: 10)).foregroundStyle(Theme.brass)
+            Text(folder.name)
+            Spacer()
+            Text("\(count)").foregroundStyle(.secondary)
+        }
+        .contextMenu {
+            Button { renameText = folder.name; renaming = folder } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+            Button(role: .destructive) { app.brainStore.deleteFolder(folder.id) } label: {
+                Label("Delete folder", systemImage: "trash")
+            }
+        }
+    }
+
+    private func createFolder() {
+        let n = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        newFolderName = ""
+        guard !n.isEmpty else { return }
+        app.brainStore.addFolder(n)
     }
 
     private func brainRow(_ d: BrainDumpRecord) -> some View {
@@ -66,6 +137,27 @@ struct WorkspaceSidebar: View {
             }
         }
         .padding(.vertical, 2)
+        .contextMenu {
+            Menu("Move to") {
+                Button {
+                    app.brainStore.move(d.id, to: nil)
+                } label: {
+                    Label("Unfiled", systemImage: d.folderID == nil ? "checkmark" : "tray")
+                }
+                if !app.brainStore.folders.isEmpty { Divider() }
+                ForEach(app.brainStore.folders) { f in
+                    Button {
+                        app.brainStore.move(d.id, to: f.id)
+                    } label: {
+                        Label(f.name, systemImage: d.folderID == f.id ? "checkmark" : "folder")
+                    }
+                }
+            }
+            Divider()
+            Button(role: .destructive) { app.brainStore.delete(d) } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 
     private func pitchRow(_ p: SessionRecord) -> some View {
