@@ -30,24 +30,36 @@ struct OpenAIClient: AnalysisProvider {
         return try Self.decode(BrainDumpSynthesis.self, from: text)
     }
 
+    func reply(context: String, newThought: String) async throws -> String {
+        try await complete(
+            system: BrainDumpPrompts.replySystem,
+            user: BrainDumpPrompts.replyMessage(context: context, newThought: newThought),
+            maxTokens: 600,
+            format: nil)   // plain conversational text — no schema
+    }
+
     // MARK: Request
 
     private func complete(system: String, user: String,
                           schemaName: String, schema: Any) async throws -> String {
+        try await complete(system: system, user: user, maxTokens: 8_000,
+                           format: ["type": "json_schema",
+                                    "json_schema": ["name": schemaName, "strict": true, "schema": schema]])
+    }
+
+    private func complete(system: String, user: String,
+                          maxTokens: Int, format: [String: Any]?) async throws -> String {
         guard let apiKey, !apiKey.isEmpty else { throw ProviderError.missingKey("OpenAI") }
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": model,
-            "max_tokens": 8_000,
+            "max_tokens": maxTokens,
             "messages": [
                 ["role": "system", "content": system],
                 ["role": "user", "content": user]
-            ],
-            "response_format": [
-                "type": "json_schema",
-                "json_schema": ["name": schemaName, "strict": true, "schema": schema]
             ]
         ]
+        if let format { body["response_format"] = format }
 
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/chat/completions")!)
         request.httpMethod = "POST"

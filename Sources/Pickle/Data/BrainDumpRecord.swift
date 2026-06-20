@@ -9,7 +9,8 @@ struct BrainDumpRecord: Codable, Identifiable, Equatable {
     var updatedAt: Date?           // last added-to (nil = never updated)
     var durationSeconds: Double    // total time spoken across all sessions
     var transcript: String         // everything said so far, accumulated
-    var synthesis: BrainDumpSynthesis
+    var synthesis: BrainDumpSynthesis  // the snapshot from the first dump
+    var thread: [BrainDumpTurn]?   // follow-up "add more thinking" exchanges
     var folderID: UUID?            // nil = unfiled
 
     init(id: UUID = UUID(),
@@ -18,6 +19,7 @@ struct BrainDumpRecord: Codable, Identifiable, Equatable {
          durationSeconds: Double,
          transcript: String,
          synthesis: BrainDumpSynthesis,
+         thread: [BrainDumpTurn]? = nil,
          folderID: UUID? = nil) {
         self.id = id
         self.date = date
@@ -25,7 +27,24 @@ struct BrainDumpRecord: Codable, Identifiable, Equatable {
         self.durationSeconds = durationSeconds
         self.transcript = transcript
         self.synthesis = synthesis
+        self.thread = thread
         self.folderID = folderID
+    }
+
+    var turns: [BrainDumpTurn] { thread ?? [] }
+}
+
+/// One follow-up exchange in a brain dump: what the founder added, and Pickle's
+/// reply to that specific thought (no full re-synthesis).
+struct BrainDumpTurn: Codable, Identifiable, Equatable {
+    var id: UUID
+    var you: String       // the new thought (transcribed)
+    var pickle: String    // Pickle's reply
+
+    init(id: UUID = UUID(), you: String, pickle: String) {
+        self.id = id
+        self.you = you
+        self.pickle = pickle
     }
 }
 

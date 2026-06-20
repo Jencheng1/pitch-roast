@@ -11,14 +11,15 @@ struct BrainDumpResultsStage: View {
             ScrollView {
                 VStack(spacing: 14) {
                     header(s)
-                    summary(s)
-                    ideas(s)
-                    bestBet(s)
-                    themes(s)
-                    bulletCard("Pains worth chasing", "person.crop.circle.badge.exclamationmark", Theme.warm, s.painPoints)
-                    bulletCard("Open questions", "questionmark.bubble.fill", Theme.brass, s.openQuestions)
-                    nextSteps(s)
-                    pitchAngle(s)
+                    if app.brainTurns.isEmpty {
+                        // Fresh dump — show the full synthesis.
+                        recapStack(s)
+                    } else {
+                        // Once a conversation is going, the thread leads and the
+                        // original brainstorm collapses into a dropdown.
+                        threadSection
+                        recapDisclosure(s)
+                    }
                     transcriptDisclosure
                 }
                 .padding(16)
@@ -27,6 +28,34 @@ struct BrainDumpResultsStage: View {
         } else {
             EmptyView()
         }
+    }
+
+    // MARK: Recap (the original synthesis)
+
+    @ViewBuilder private func recap(_ s: BrainDumpSynthesis) -> some View {
+        summary(s)
+        ideas(s)
+        bestBet(s)
+        themes(s)
+        bulletCard("Pains worth chasing", "person.crop.circle.badge.exclamationmark", Theme.warm, s.painPoints)
+        bulletCard("Open questions", "questionmark.bubble.fill", Theme.brass, s.openQuestions)
+        nextSteps(s)
+        pitchAngle(s)
+    }
+
+    private func recapStack(_ s: BrainDumpSynthesis) -> some View {
+        VStack(spacing: 14) { recap(s) }
+    }
+
+    /// Collapsed-by-default dropdown holding the original brainstorm.
+    private func recapDisclosure(_ s: BrainDumpSynthesis) -> some View {
+        DisclosureGroup {
+            recapStack(s).padding(.top, 10)
+        } label: {
+            SectionLabel(title: "The original brainstorm", systemImage: "sparkles", tint: Theme.brassBright)
+        }
+        .tint(Theme.brassBright)
+        .padding(12).glassCard()
     }
 
     // MARK: Header
@@ -49,6 +78,32 @@ struct BrainDumpResultsStage: View {
             .font(.pickleBody(13)).foregroundStyle(.white.opacity(0.85))
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // MARK: The ongoing thread (add-more replies)
+
+    private var threadSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionLabel(title: "The thread", systemImage: "bubble.left.and.bubble.right.fill", tint: Theme.cool)
+            ForEach(app.brainTurns) { turn in
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("“\(turn.you)”")
+                        .font(.pickleBody(12)).italic().foregroundStyle(.white.opacity(0.55))
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .top, spacing: 9) {
+                        PickleMascotView(mood: .curious, size: 30).frame(width: 34, height: 34)
+                        Text(turn.pickle)
+                            .font(.pickleBody(13)).foregroundStyle(.white.opacity(0.92))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(11)
+                .background(Theme.cool.opacity(0.10))
+                .overlay(RoundedRectangle(cornerRadius: Theme.cardCorner).strokeBorder(Theme.cool.opacity(0.22), lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous))
+            }
+        }
     }
 
     // MARK: Ideas

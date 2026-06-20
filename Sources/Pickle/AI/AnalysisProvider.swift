@@ -11,6 +11,10 @@ protocol AnalysisProvider {
     /// Brain-dump mode: synthesize freeform thinking into structured ideas.
     func synthesize(transcript: String,
                     spokenSeconds: Double) async throws -> BrainDumpSynthesis
+
+    /// Continuing a brain dump: reply conversationally to a single new thought,
+    /// given the prior context — no full re-synthesis. Returns plain text.
+    func reply(context: String, newThought: String) async throws -> String
 }
 
 /// Shared error type for provider clients.

@@ -21,7 +21,15 @@ struct AnalyzingStage: View {
         "Ranking which one I'd actually chase…",
         "Sketching a pitch angle to try next…"
     ]
-    private var thoughts: [String] { app.mode == .brainDump ? brainThoughts : pitchThoughts }
+    private let replyThoughts = [
+        "Hearing you out…",
+        "Chewing on that…",
+        "Reacting to your new thought…"
+    ]
+    private var thoughts: [String] {
+        if app.mode == .brainDump { return app.isAddingOn ? replyThoughts : brainThoughts }
+        return pitchThoughts
+    }
 
     var body: some View {
         VStack(spacing: 18) {

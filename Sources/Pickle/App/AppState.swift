@@ -37,9 +37,10 @@ final class AppState: ObservableObject {
     @Published var result: SessionRecord?
     @Published var brainResult: BrainDumpSynthesis? // latest brain-dump synthesis
     @Published var brainTranscript: String = ""
+    @Published var brainTurns: [BrainDumpTurn] = []  // follow-up replies on the current dump
     @Published var currentDumpID: UUID?             // the brain dump being viewed
+    @Published var isAddingOn = false               // true while replying to an add-on
     private var continuingDumpID: UUID?             // set while adding on to a dump
-    private var brainBaseTranscript = ""            // prior transcript when adding on
     @Published var errorMessage: String?
     @Published var isNewBest = false
 
@@ -188,19 +189,21 @@ final class AppState: ObservableObject {
         mode = .brainDump
         currentDumpID = nil
         continuingDumpID = nil
-        brainBaseTranscript = ""
+        isAddingOn = false
+        brainTurns = []
         beginCapture(maxSeconds: brainDumpMaxSeconds)
     }
 
     /// Add more thinking onto an existing brain dump — records again, then
-    /// re-synthesizes over the full accumulated transcript.
+    /// Pickle *replies* to the new thought (the synthesis stays as-is).
     func continueBrainDump(_ record: BrainDumpRecord) {
         mode = .brainDump
         currentDumpID = record.id
         continuingDumpID = record.id
-        brainBaseTranscript = record.transcript
+        isAddingOn = true
         brainResult = record.synthesis
         brainTranscript = record.transcript
+        brainTurns = record.turns
         beginCapture(maxSeconds: brainDumpMaxSeconds)
     }
 
@@ -242,7 +245,11 @@ final class AppState: ObservableObject {
         let openAIKey = Keychain.load(.openAI)
 
         if mode == .brainDump {
-            runBrainDump(url: url, seconds: seconds, openAIKey: openAIKey)
+            if continuingDumpID != nil {
+                runBrainReply(url: url, seconds: seconds, openAIKey: openAIKey)
+            } else {
+                runBrainSynthesis(url: url, seconds: seconds, openAIKey: openAIKey)
+            }
         } else {
             runPitchAnalysis(url: url, seconds: seconds, openAIKey: openAIKey)
         }
@@ -279,9 +286,8 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func runBrainDump(url: URL, seconds: Double, openAIKey: String?) {
-        let base = brainBaseTranscript
-        let continuingID = continuingDumpID
+    /// Fresh brain dump → full structured synthesis (saved as a new record).
+    private func runBrainSynthesis(url: URL, seconds: Double, openAIKey: String?) {
         analyzeTask?.cancel()
         analyzeTask = Task {
             let analyzer = PitchAnalyzer(
@@ -290,29 +296,18 @@ final class AppState: ObservableObject {
             )
             do {
                 let (transcript, synthesis) = try await analyzer.brainDump(
-                    audioURL: url, spokenSeconds: seconds, priorTranscript: base,
+                    audioURL: url, spokenSeconds: seconds,
                     onTranscript: { [weak self] text in
                         Task { @MainActor in self?.transcriptPreview = text }
                     })
                 guard !Task.isCancelled else { return }
-
-                if let id = continuingID, let existing = brainStore.record(id) {
-                    // Append to the existing dump, preserving its folder + origin date.
-                    var updated = existing
-                    updated.transcript = transcript
-                    updated.synthesis = synthesis
-                    updated.durationSeconds += seconds
-                    brainStore.update(updated)
-                    currentDumpID = id
-                } else {
-                    let rec = BrainDumpRecord(
-                        durationSeconds: seconds, transcript: transcript, synthesis: synthesis)
-                    brainStore.add(rec)
-                    currentDumpID = rec.id
-                }
-                continuingDumpID = nil
-                brainBaseTranscript = ""
+                let rec = BrainDumpRecord(
+                    durationSeconds: seconds, transcript: transcript, synthesis: synthesis)
+                brainStore.add(rec)
+                currentDumpID = rec.id
+                isAddingOn = false
                 brainTranscript = transcript
+                brainTurns = []
                 brainResult = synthesis
                 navStack = []
                 stage = .brainDumpResults
@@ -324,6 +319,66 @@ final class AppState: ObservableObject {
                 stage = .welcome
             }
         }
+    }
+
+    /// Adding on → Pickle replies to the new thought only; the synthesis is left
+    /// alone, the reply is appended to the dump's thread.
+    private func runBrainReply(url: URL, seconds: Double, openAIKey: String?) {
+        guard let id = continuingDumpID, let existing = brainStore.record(id) else {
+            runBrainSynthesis(url: url, seconds: seconds, openAIKey: openAIKey); return
+        }
+        let context = replyContext(for: existing)
+        analyzeTask?.cancel()
+        analyzeTask = Task {
+            let transcriber = makeTranscriber(openAIKey: openAIKey)
+            let provider = makeProvider(openAIKey: openAIKey)
+            do {
+                let raw = try await transcriber.transcribe(url: url)
+                let newThought = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard newThought.count >= 4 else { throw PitchAnalyzer.AnalyzerError.emptyTranscript }
+                guard !Task.isCancelled else { return }
+                transcriptPreview = newThought
+
+                let reply = try await provider.reply(context: context, newThought: newThought)
+                guard !Task.isCancelled else { return }
+
+                var updated = existing
+                updated.transcript += "\n\n" + newThought
+                updated.durationSeconds += seconds
+                var turns = updated.turns
+                turns.append(BrainDumpTurn(you: newThought, pickle: reply))
+                updated.thread = turns
+                brainStore.update(updated)
+
+                currentDumpID = id
+                continuingDumpID = nil
+                isAddingOn = false
+                brainResult = updated.synthesis        // unchanged
+                brainTranscript = updated.transcript
+                brainTurns = turns
+                navStack = []
+                stage = .brainDumpResults
+                if speakFeedback { voice.speak(reply, openAIKey: openAIKey) }
+                try? FileManager.default.removeItem(at: url)
+            } catch {
+                guard !Task.isCancelled else { return }
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                stage = .welcome
+            }
+        }
+    }
+
+    /// A compact context string for the reply: where their thinking stands plus
+    /// the last couple of exchanges.
+    private func replyContext(for record: BrainDumpRecord) -> String {
+        let s = record.synthesis
+        var ctx = "What they're circling: \(s.headline)\nSummary: \(s.summary)\nYour current best bet: \(s.bestBet)"
+        let recent = record.turns.suffix(3)
+        if !recent.isEmpty {
+            ctx += "\n\nRecent back-and-forth:\n"
+                + recent.map { "Founder: \($0.you)\nYou (Pickle): \($0.pickle)" }.joined(separator: "\n")
+        }
+        return ctx
     }
 
     // MARK: Navigation
@@ -357,7 +412,9 @@ final class AppState: ObservableObject {
     func openBrainDump(_ record: BrainDumpRecord) {
         brainResult = record.synthesis
         brainTranscript = record.transcript
+        brainTurns = record.turns
         currentDumpID = record.id
+        isAddingOn = false
         mode = .brainDump
         navigate(to: .brainDumpResults)
     }
@@ -370,8 +427,8 @@ final class AppState: ObservableObject {
 
     /// Start another brain dump from scratch.
     func newBrainDump() {
-        voice.stop(); brainResult = nil; brainTranscript = ""
-        currentDumpID = nil; continuingDumpID = nil; brainBaseTranscript = ""
+        voice.stop(); brainResult = nil; brainTranscript = ""; brainTurns = []
+        currentDumpID = nil; continuingDumpID = nil; isAddingOn = false
         mode = .brainDump
         navStack = []; stage = .welcome
     }

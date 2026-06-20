@@ -52,7 +52,7 @@ struct RecordingStage: View {
 
     private var brandLabel: String {
         guard app.mode == .brainDump else { return app.selectedLength.title.uppercased() }
-        return app.currentDumpID != nil ? "ADDING ON" : "BRAIN DUMP"
+        return app.isAddingOn ? "ADDING ON" : "BRAIN DUMP"
     }
 
     private var pacingHint: String {

@@ -47,14 +47,27 @@ struct ClaudeClient: AnalysisProvider {
         return try decode(BrainDumpSynthesis.self, from: text)
     }
 
+    func reply(context: String, newThought: String) async throws -> String {
+        // Plain conversational reply — no schema, lower effort for snappiness.
+        try await completeText(
+            system: BrainDumpPrompts.replySystem,
+            userText: BrainDumpPrompts.replyMessage(context: context, newThought: newThought),
+            schema: nil, maxTokens: 1_024, effort: "low")
+    }
+
     // MARK: Request
 
-    private func completeText(system: String, userText: String, schema: Any) async throws -> String {
+    private func completeText(system: String, userText: String,
+                              schema: Any?, maxTokens: Int = 16_000,
+                              effort: String = "medium") async throws -> String {
         guard let apiKey, !apiKey.isEmpty else { throw ClientError.missingKey }
+
+        var outputConfig: [String: Any] = ["effort": effort]
+        if let schema { outputConfig["format"] = ["type": "json_schema", "schema": schema] }
 
         let body: [String: Any] = [
             "model": model,
-            "max_tokens": 16_000,
+            "max_tokens": maxTokens,
             // Frozen persona first → caches across runs. cache_control on the block.
             "system": [[
                 "type": "text",
@@ -62,10 +75,7 @@ struct ClaudeClient: AnalysisProvider {
                 "cache_control": ["type": "ephemeral"]
             ]],
             "thinking": ["type": "adaptive"],
-            "output_config": [
-                "effort": "medium",
-                "format": ["type": "json_schema", "schema": schema]
-            ],
+            "output_config": outputConfig,
             "messages": [["role": "user", "content": userText]]
         ]
 
