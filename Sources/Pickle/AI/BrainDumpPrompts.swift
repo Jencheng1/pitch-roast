@@ -26,6 +26,21 @@ enum BrainDumpPrompts {
       the problem, who it's for, why now, a one-line value prop, and a 0-100 conviction score \
       (how promising you genuinely think it is — be honest and calibrated).
     - bestBet: which idea you'd chase first and why, in one short paragraph.
+    - landscape: startup discovery + a competitive read for the strongest idea (the best bet). \
+      Match competitors by HOW they solve the problem — the idea's core values, the customer \
+      behavior it relies on, and the user journey — NOT just the industry category. Prioritize \
+      products that solve the problem in a similar way (same approach/mechanism), and newer/niche \
+      startups, over broad same-category incumbents. (E.g. a dating app built around authenticity, \
+      community, and in-person events should be matched against products like Thursday, 222, \
+      Timeleft, and singles-event companies first — broad swipe apps like Tinder share the \
+      category but solve it differently, so they're context, not the closest match.) Include: the \
+      category; a saturation score (0-100); the related players ordered closest-first (for each: \
+      name, what they do in one line, how it relates [Direct competitor / Adjacent / Incumbent / \
+      Alternative / DIY / status quo], and where they fall short relative to this idea); the \
+      whitespace; and the edge (what could make it worth pursuing). CRITICAL on accuracy: only \
+      name real products/companies you are confident exist — never invent startups or fabricate \
+      funding/metrics. If unsure whether specific competitors exist, describe the category and the \
+      *types* of solutions instead and say so. Be honest about how contested the space is.
     - painPoints: the customer pains and observations worth chasing.
     - openQuestions: the most important things they still need to figure out.
     - nextSteps: 3-5 concrete, small next actions (talk to X, validate Y) — action + why.

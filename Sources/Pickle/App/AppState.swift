@@ -19,6 +19,14 @@ enum AppMode: Equatable {
     case brainDump
 }
 
+/// A small in-panel notification (e.g. "competitor scan is ready"). Tapping it
+/// jumps to the relevant brain dump.
+struct PickleToast: Equatable {
+    var message: String
+    var icon: String
+    var dumpID: UUID?
+}
+
 /// Central app state + coordinator. Owns the recorder, the store, the analysis
 /// pipeline, and the current flow. Both the companion and the panel observe it.
 @MainActor
@@ -40,6 +48,9 @@ final class AppState: ObservableObject {
     @Published var brainTurns: [BrainDumpTurn] = []  // follow-up replies on the current dump
     @Published var currentDumpID: UUID?             // the brain dump being viewed
     @Published var isAddingOn = false               // true while replying to an add-on
+    @Published var landscapeLoading = false         // true while the live competitor search runs
+    @Published var toast: PickleToast?              // transient "ready" notification
+    @Published var expandRecap = false              // request the results view to open its recap
     private var continuingDumpID: UUID?             // set while adding on to a dump
     @Published var errorMessage: String?
     @Published var isNewBest = false
@@ -198,6 +209,7 @@ final class AppState: ObservableObject {
     /// Pickle *replies* to the new thought (the synthesis stays as-is).
     func continueBrainDump(_ record: BrainDumpRecord) {
         mode = .brainDump
+        toast = nil
         currentDumpID = record.id
         continuingDumpID = record.id
         isAddingOn = true
@@ -301,6 +313,9 @@ final class AppState: ObservableObject {
                         Task { @MainActor in self?.transcriptPreview = text }
                     })
                 guard !Task.isCancelled else { return }
+
+                // Show the synthesis immediately (with its knowledge-based landscape);
+                // the live web-search landscape fills in afterward in the background.
                 let rec = BrainDumpRecord(
                     durationSeconds: seconds, transcript: transcript, synthesis: synthesis)
                 brainStore.add(rec)
@@ -313,6 +328,11 @@ final class AppState: ObservableObject {
                 stage = .brainDumpResults
                 if speakFeedback { voice.speak(synthesis.headline, openAIKey: openAIKey) }
                 try? FileManager.default.removeItem(at: url)
+
+                if let idea = synthesis.topIdea ?? synthesis.ideas.first {
+                    refreshLandscape(dumpID: rec.id, idea: idea,
+                                     baseCategory: synthesis.landscape?.category, openAIKey: openAIKey)
+                }
             } catch {
                 guard !Task.isCancelled else { return }
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -368,6 +388,49 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Background live-research enrichment: fetch the competitive landscape via
+    /// web search and patch it into the (already-shown) dump when it returns.
+    private func refreshLandscape(dumpID: UUID, idea: BrainDumpSynthesis.Idea,
+                                  baseCategory: String?, openAIKey: String?) {
+        guard let researcher = makeLandscapeResearcher(openAIKey: openAIKey) else { return }
+        landscapeLoading = true
+        Task {
+            do {
+                var live = try await researcher.research(
+                    ideaName: idea.name, problem: idea.problem, category: baseCategory ?? idea.name,
+                    customer: idea.audience, valueProp: idea.valueProp)
+                live.live = true
+                if var rec = brainStore.record(dumpID) {
+                    rec.synthesis.landscape = live
+                    brainStore.replace(rec)
+                }
+                if currentDumpID == dumpID { brainResult?.landscape = live }
+                let count = live.players.count
+                toast = PickleToast(
+                    message: count > 0
+                        ? "Competitor scan's in — \(count) player\(count == 1 ? "" : "s") found. See where it sits →"
+                        : "Competitor scan's in — see where it sits →",
+                    icon: "map.fill", dumpID: dumpID)
+            } catch {
+                // Keep the knowledge-based landscape that's already on screen.
+            }
+            landscapeLoading = false
+        }
+    }
+
+    // MARK: Toast
+
+    func tapToast() {
+        let id = toast?.dumpID
+        toast = nil
+        guard let id, let rec = brainStore.record(id) else { return }
+        showPanel()
+        expandRecap = true            // open the recap so the landscape is visible
+        openBrainDump(rec)
+    }
+
+    func dismissToast() { toast = nil }
+
     /// A compact context string for the reply: where their thinking stands plus
     /// the last couple of exchanges.
     private func replyContext(for record: BrainDumpRecord) -> String {
@@ -410,6 +473,7 @@ final class AppState: ObservableObject {
 
     /// Reopen a saved brain dump from history.
     func openBrainDump(_ record: BrainDumpRecord) {
+        if toast?.dumpID == record.id { toast = nil }
         brainResult = record.synthesis
         brainTranscript = record.transcript
         brainTurns = record.turns
@@ -428,7 +492,7 @@ final class AppState: ObservableObject {
     /// Start another brain dump from scratch.
     func newBrainDump() {
         voice.stop(); brainResult = nil; brainTranscript = ""; brainTurns = []
-        currentDumpID = nil; continuingDumpID = nil; isAddingOn = false
+        currentDumpID = nil; continuingDumpID = nil; isAddingOn = false; toast = nil
         mode = .brainDump
         navStack = []; stage = .welcome
     }
@@ -459,6 +523,18 @@ final class AppState: ObservableObject {
         case .openai: return OpenAIClient(apiKey: openAIKey)
         case .claude: return ClaudeClient(apiKey: Keychain.load(.anthropic))
         }
+    }
+
+    /// Live competitive research engine. Prefer Claude's web search (cleanest);
+    /// otherwise OpenAI's. Nil if neither key is available → knowledge fallback.
+    private func makeLandscapeResearcher(openAIKey: String?) -> LandscapeResearcher? {
+        if let key = Keychain.load(.anthropic), !key.isEmpty {
+            return ClaudeLandscapeResearcher(apiKey: key)
+        }
+        if let key = openAIKey, !key.isEmpty {
+            return OpenAILandscapeResearcher(apiKey: key)
+        }
+        return nil
     }
 
     // MARK: Settings

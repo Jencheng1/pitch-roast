@@ -9,13 +9,14 @@ enum BrainDumpSchema {
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["headline","summary","themes","ideas","bestBet","painPoints","openQuestions","nextSteps","pitchAngle"],
+      "required": ["headline","summary","themes","ideas","bestBet","landscape","painPoints","openQuestions","nextSteps","pitchAngle"],
       "properties": {
         "headline": { "type": "string", "description": "One punchy line: Pickle's read on the most promising thread." },
         "summary": { "type": "string", "description": "A short synthesis of what the founder talked through." },
         "themes": { "type": "array", "items": { "$ref": "#/$defs/theme" } },
         "ideas": { "type": "array", "items": { "$ref": "#/$defs/idea" }, "description": "Startup concepts pulled from the dump, strongest first." },
         "bestBet": { "type": "string", "description": "Which idea is strongest and why — one short paragraph." },
+        "landscape": { "$ref": "#/$defs/landscape" },
         "painPoints": { "type": "array", "items": { "type": "string" }, "description": "Customer pains / observations worth chasing." },
         "openQuestions": { "type": "array", "items": { "type": "string" }, "description": "What to investigate next." },
         "nextSteps": { "type": "array", "items": { "$ref": "#/$defs/step" } },
@@ -51,6 +52,30 @@ enum BrainDumpSchema {
           "properties": {
             "action": { "type": "string" },
             "why": { "type": "string" }
+          }
+        },
+        "landscape": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["category","saturation","marketRead","players","whitespace","edge"],
+          "properties": {
+            "category": { "type": "string", "description": "The market/category this idea sits in." },
+            "saturation": { "type": "integer", "description": "0-100, how crowded/contested the space is." },
+            "marketRead": { "type": "string", "description": "Honest read on how contested it is and whether it's worth pursuing." },
+            "players": { "type": "array", "items": { "$ref": "#/$defs/player" }, "description": "Existing products, startups, competitors, adjacent solutions, incumbents, and status-quo alternatives." },
+            "whitespace": { "type": "array", "items": { "type": "string" }, "description": "Gaps / underserved angles where this idea could win." },
+            "edge": { "type": "array", "items": { "type": "string" }, "description": "What could make this idea worth pursuing vs. what already exists." }
+          }
+        },
+        "player": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name","what","relationship","gap"],
+          "properties": {
+            "name": { "type": "string" },
+            "what": { "type": "string", "description": "What they do, one line." },
+            "relationship": { "type": "string", "description": "How it relates: Direct competitor, Adjacent, Incumbent, Alternative, or DIY / status quo." },
+            "gap": { "type": "string", "description": "Where they fall short relative to this idea." }
           }
         }
       }

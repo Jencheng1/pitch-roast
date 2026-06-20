@@ -52,6 +52,10 @@ struct CompanionView: View {
             // Pickle pipes up when his mood changes (e.g. results land).
             flashBubble(newMood.quip)
         }
+        .onChange(of: app.toast) { _, t in
+            // If the panel's closed, nudge via the bubble so the scan isn't missed.
+            if t != nil, !app.panelVisible { flashBubble("Competitor scan's ready 👀") }
+        }
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 flashBubble("Pitch me.")

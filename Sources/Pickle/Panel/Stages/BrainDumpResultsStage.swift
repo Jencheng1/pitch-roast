@@ -5,6 +5,7 @@ import SwiftUI
 /// chase, open questions, next steps, and a pitch angle to practice.
 struct BrainDumpResultsStage: View {
     @EnvironmentObject private var app: AppState
+    @State private var recapExpanded = false
 
     var body: some View {
         if let s = app.brainResult {
@@ -25,8 +26,18 @@ struct BrainDumpResultsStage: View {
                 .padding(16)
             }
             .safeAreaInset(edge: .bottom) { actionBar }
+            .onAppear(perform: syncRecapExpansion)
+            .onChange(of: app.expandRecap) { _, _ in syncRecapExpansion() }
         } else {
             EmptyView()
+        }
+    }
+
+    /// Honor a request (e.g. from the competitor-scan toast) to open the recap.
+    private func syncRecapExpansion() {
+        if app.expandRecap {
+            withAnimation { recapExpanded = true }
+            app.expandRecap = false
         }
     }
 
@@ -36,6 +47,7 @@ struct BrainDumpResultsStage: View {
         summary(s)
         ideas(s)
         bestBet(s)
+        if let l = s.landscape { landscape(l) }
         themes(s)
         bulletCard("Pains worth chasing", "person.crop.circle.badge.exclamationmark", Theme.warm, s.painPoints)
         bulletCard("Open questions", "questionmark.bubble.fill", Theme.brass, s.openQuestions)
@@ -49,7 +61,7 @@ struct BrainDumpResultsStage: View {
 
     /// Collapsed-by-default dropdown holding the original brainstorm.
     private func recapDisclosure(_ s: BrainDumpSynthesis) -> some View {
-        DisclosureGroup {
+        DisclosureGroup(isExpanded: $recapExpanded) {
             recapStack(s).padding(.top, 10)
         } label: {
             SectionLabel(title: "The original brainstorm", systemImage: "sparkles", tint: Theme.brassBright)
@@ -162,6 +174,114 @@ struct BrainDumpResultsStage: View {
         .background(Theme.brass.opacity(0.12))
         .overlay(RoundedRectangle(cornerRadius: Theme.cardCorner).strokeBorder(Theme.brass.opacity(0.28), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous))
+    }
+
+    // MARK: Landscape (startup discovery + competitive read)
+
+    private func landscape(_ l: BrainDumpSynthesis.Landscape) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                SectionLabel(title: "Where it sits", systemImage: "map.fill", tint: Theme.brassBright)
+                if app.landscapeLoading {
+                    HStack(spacing: 4) {
+                        ProgressView().controlSize(.small)
+                        Text("scouting the web…").font(.pickleCaption(10)).foregroundStyle(Theme.cool)
+                    }
+                } else if l.live == true {
+                    Chip(text: "LIVE", systemImage: "dot.radiowaves.left.and.right", tint: Theme.cool)
+                } else {
+                    Chip(text: "FROM MEMORY", systemImage: "brain", tint: .white.opacity(0.4))
+                }
+            }
+
+            // Category + how-crowded gauge + the read.
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(l.category).font(.pickleHeadline(13)).foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Text("\(l.saturation)% crowded")
+                        .font(.pickleCaption(10).monospacedDigit())
+                        .foregroundStyle(crowdColor(l.saturation))
+                }
+                crowdBar(l.saturation)
+                Text(l.marketRead)
+                    .font(.pickleBody(12)).foregroundStyle(.white.opacity(0.8))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(11).glassCard()
+
+            // Existing players.
+            ForEach(l.players) { p in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(p.name).font(.pickleHeadline(12)).foregroundStyle(.white)
+                        Spacer(minLength: 8)
+                        Chip(text: p.relationship, tint: relationshipColor(p.relationship))
+                    }
+                    Text(p.what).font(.pickleBody(12)).foregroundStyle(.white.opacity(0.78))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Gap: \(p.gap)").font(.pickleCaption(11)).foregroundStyle(.white.opacity(0.55))
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let url = p.url, let link = playerURL(url) {
+                        Link(destination: link) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "arrow.up.right")
+                                Text(prettyDomain(url))
+                            }
+                            .font(.pickleCaption(10)).foregroundStyle(Theme.cool)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(11).glassCard()
+            }
+
+            bulletCard("Open lanes", "arrow.up.right.circle.fill", Theme.cool, l.whitespace)
+            bulletCard("Why it could win", "checkmark.seal.fill", Theme.brassBright, l.edge)
+        }
+    }
+
+    /// High saturation reads "hot/contested"; low reads "open/green".
+    private func crowdColor(_ saturation: Int) -> Color {
+        Theme.scoreColor(100 - min(max(saturation, 0), 100))
+    }
+
+    private func crowdBar(_ saturation: Int) -> some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.10))
+                Capsule().fill(crowdColor(saturation))
+                    .frame(width: geo.size.width * CGFloat(min(max(saturation, 0), 100)) / 100)
+            }
+        }
+        .frame(height: 6)
+    }
+
+    private func relationshipColor(_ relationship: String) -> Color {
+        let r = relationship.lowercased()
+        if r.contains("direct") { return Theme.hot }
+        if r.contains("incumbent") { return Theme.warm }
+        if r.contains("diy") || r.contains("status") { return Theme.brass }
+        return Theme.cool          // adjacent / alternative
+    }
+
+    /// A valid, openable URL (adds https:// if the model returned a bare domain).
+    private func playerURL(_ raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count > 3, trimmed.contains(".") else { return nil }
+        let withScheme = trimmed.hasPrefix("http") ? trimmed : "https://\(trimmed)"
+        return URL(string: withScheme)
+    }
+
+    /// Strip scheme + path to a clean domain for display.
+    private func prettyDomain(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespaces)
+        for prefix in ["https://", "http://", "www."] where s.hasPrefix(prefix) {
+            s.removeFirst(prefix.count)
+        }
+        return s.split(separator: "/").first.map(String.init) ?? s
     }
 
     // MARK: Themes

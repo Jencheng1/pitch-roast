@@ -38,6 +38,14 @@ final class BrainDumpStore: ObservableObject {
         saveDumps()
     }
 
+    /// Replace a record in place — same position, no "updated" bump. Used for
+    /// background enrichment (e.g. live landscape) that isn't a user edit.
+    func replace(_ record: BrainDumpRecord) {
+        guard let i = dumps.firstIndex(where: { $0.id == record.id }) else { return }
+        dumps[i] = record
+        saveDumps()
+    }
+
     func delete(_ record: BrainDumpRecord) {
         dumps.removeAll { $0.id == record.id }
         saveDumps()

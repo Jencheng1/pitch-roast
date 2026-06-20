@@ -9,6 +9,7 @@ struct BrainDumpSynthesis: Codable, Equatable {
     var themes: [Theme]             // recurring threads across the dump
     var ideas: [Idea]               // extracted startup concepts, strongest first
     var bestBet: String             // which idea to chase and why (a short paragraph)
+    var landscape: Landscape?       // startup discovery + competitive read (optional for old records)
     var painPoints: [String]        // customer pains / observations worth chasing
     var openQuestions: [String]     // what to investigate next
     var nextSteps: [Step]           // concrete next actions
@@ -39,6 +40,29 @@ struct BrainDumpSynthesis: Codable, Equatable {
         var action: String
         var why: String
         private enum CodingKeys: String, CodingKey { case action, why }
+    }
+
+    /// Where the (strongest) idea sits in the existing market — startup discovery
+    /// and competitive read.
+    struct Landscape: Codable, Equatable {
+        var category: String        // the space this idea lives in
+        var saturation: Int         // 0–100, how crowded/contested
+        var marketRead: String      // honest read on how contested + worth pursuing
+        var players: [Player]       // related products / startups / alternatives
+        var whitespace: [String]    // gaps where this idea could win
+        var edge: [String]          // what could make it worth pursuing
+        var live: Bool?             // true if sourced from a live web search (set in code)
+    }
+
+    /// An existing product / startup / alternative in the space.
+    struct Player: Codable, Equatable, Identifiable {
+        var id = UUID()
+        var name: String
+        var what: String            // what they do, one line
+        var relationship: String    // Direct competitor / Adjacent / Incumbent / Alternative / DIY
+        var gap: String             // where they fall short relative to this idea
+        var url: String?            // homepage, when found via search
+        private enum CodingKeys: String, CodingKey { case name, what, relationship, gap, url }
     }
 
     /// The strongest extracted idea, if any (ideas come back strongest-first).
