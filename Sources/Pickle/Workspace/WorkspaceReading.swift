@@ -114,7 +114,7 @@ struct BrainWorkspaceDetail: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                ForEach(record.files) { f in fileRow(f) }
+                ForEach(record.files) { f in fileCard(f) }
                 Button { showSessionImporter = true } label: {
                     Label("Add files", systemImage: "plus").font(.pickleCaption(11))
                 }
@@ -123,22 +123,47 @@ struct BrainWorkspaceDetail: View {
         }
     }
 
-    private func fileRow(_ f: Attachment) -> some View {
-        HStack(spacing: 11) {
-            Image(systemName: f.iconName).foregroundStyle(Theme.cool)
-                .font(.system(size: 15)).frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(f.name).font(.pickleBody(13)).foregroundStyle(.white).lineLimit(1)
-                Text("\(kindLabel(f.kind)) · \(f.sizeLabel)")
-                    .font(.pickleCaption(10)).foregroundStyle(.white.opacity(0.5))
+    /// A material rendered inline: images show directly, text/PDF/doc content
+    /// expands in place — no popup.
+    private func fileCard(_ f: Attachment) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 11) {
+                Image(systemName: f.iconName).foregroundStyle(Theme.cool)
+                    .font(.system(size: 15)).frame(width: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(f.name).font(.pickleBody(13)).foregroundStyle(.white).lineLimit(1)
+                    Text("\(kindLabel(f.kind)) · \(f.sizeLabel)")
+                        .font(.pickleCaption(10)).foregroundStyle(.white.opacity(0.5))
+                }
+                Spacer(minLength: 8)
+                Button { app.removeSessionAttachment(f.id, dumpID: record.id) } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(.white.opacity(0.35))
+                }
+                .buttonStyle(.plain).help("Remove")
             }
-            Spacer(minLength: 8)
-            Button { app.removeSessionAttachment(f.id, dumpID: record.id) } label: {
-                Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(.white.opacity(0.35))
-            }
-            .buttonStyle(.plain).help("Remove")
+            inlineContent(f)
         }
         .padding(11).glassCard()
+    }
+
+    @ViewBuilder private func inlineContent(_ f: Attachment) -> some View {
+        if f.kind == .image, let img = decodedImage(f) {
+            Image(nsImage: img).resizable().scaledToFit()
+                .frame(maxWidth: .infinity, maxHeight: 380, alignment: .leading)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.white.opacity(0.08), lineWidth: 1))
+        } else if let text = f.extractedText, !text.isEmpty {
+            DisclosureGroup {
+                Text(text).font(.pickleBody(13)).foregroundStyle(.white.opacity(0.85))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 6)
+            } label: {
+                Text(textPreview(text)).font(.pickleBody(12))
+                    .foregroundStyle(.white.opacity(0.6)).lineLimit(2)
+            }
+            .tint(Theme.cool)
+        }
     }
 
     private func pill(_ f: Attachment) -> some View {
@@ -153,6 +178,17 @@ struct BrainWorkspaceDetail: View {
         .padding(.horizontal, 9).padding(.vertical, 6)
         .background(Theme.cool.opacity(0.16), in: Capsule())
         .overlay(Capsule().strokeBorder(Theme.cool.opacity(0.3), lineWidth: 1))
+    }
+
+    private func decodedImage(_ f: Attachment) -> NSImage? {
+        guard let b = f.imageBase64, let data = Data(base64Encoded: b) else { return nil }
+        return NSImage(data: data)
+    }
+
+    private func textPreview(_ text: String) -> String {
+        let flat = text.replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        return flat.count > 170 ? String(flat.prefix(170)) + "…" : flat
     }
 
     private func kindLabel(_ kind: Attachment.Kind) -> String {
