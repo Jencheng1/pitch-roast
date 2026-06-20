@@ -13,9 +13,11 @@ struct BrainWorkspaceDetail: View {
     @State private var pendingFiles: [Attachment] = []   // staged for next message
     @State private var dropTargeted = false
     @State private var composerTargeted = false
-    @State private var showSessionImporter = false
-    @State private var showComposerImporter = false
+    @State private var showImporter = false
+    @State private var importMode: ImportMode = .session
     @State private var enlarged: Attachment?
+
+    private enum ImportMode { case session, composer }
 
     private var s: BrainDumpSynthesis { record.synthesis }
 
@@ -60,15 +62,20 @@ struct BrainWorkspaceDetail: View {
             composer
         }
         .onChange(of: app.workspaceReplying) { _, replying in if !replying { pending = nil } }
-        .fileImporter(isPresented: $showSessionImporter,
+        .fileImporter(isPresented: $showImporter,
                       allowedContentTypes: allowedTypes, allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result { app.attachToSession(urls, dumpID: record.id) }
-        }
-        .fileImporter(isPresented: $showComposerImporter,
-                      allowedContentTypes: allowedTypes, allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result { ingestIntoComposer(urls) }
+            guard case .success(let urls) = result else { return }
+            switch importMode {
+            case .session:  app.attachToSession(urls, dumpID: record.id)
+            case .composer: ingestIntoComposer(urls)
+            }
         }
         .sheet(item: $enlarged) { AttachmentPreview(attachment: $0) }
+    }
+
+    private func pickFiles(_ mode: ImportMode) {
+        importMode = mode
+        showImporter = true
     }
 
     private var dropHint: some View {
@@ -114,7 +121,7 @@ struct BrainWorkspaceDetail: View {
     }
 
     private var emptyDrop: some View {
-        Button { showSessionImporter = true } label: {
+        Button { pickFiles(.session) } label: {
             VStack(spacing: 6) {
                 Image(systemName: "tray.and.arrow.down").font(.system(size: 20)).foregroundStyle(Theme.cool)
                 Text("Drag in a deck, screenshots, interview notes, or research")
@@ -167,7 +174,7 @@ struct BrainWorkspaceDetail: View {
     }
 
     private var addTile: some View {
-        Button { showSessionImporter = true } label: {
+        Button { pickFiles(.session) } label: {
             VStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4]))
@@ -361,7 +368,7 @@ struct BrainWorkspaceDetail: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack(alignment: .bottom, spacing: 10) {
-                Button { showComposerImporter = true } label: {
+                Button { pickFiles(.composer) } label: {
                     Image(systemName: "paperclip").font(.system(size: 17))
                         .foregroundStyle(.white.opacity(0.6)).frame(height: 24)
                 }
