@@ -11,6 +11,12 @@ The point isn't just a better deck. It's **reps**: the more you pitch Pickle, th
 more your confidence, readiness, and delivery climb — and Pickle tracks all three
 over time.
 
+Not ready to pitch yet? Switch to **Brain Dump** mode: ramble out loud about
+problems you've noticed, customer pains, and half-baked ideas with no structure.
+When you're done, Pickle synthesizes the noise into themes, the ideas hiding in
+it, his best bet, open questions, next steps, and a pitch angle to practice — with
+one click to turn it into a real pitch.
+
 > Built native (SwiftUI + AppKit), voice-first, glassmorphic, companion-first.
 > Pickle thinks with **Claude (`claude-opus-4-8`)**.
 

@@ -7,6 +7,10 @@ protocol AnalysisProvider {
     func analyze(transcript: String,
                  length: PitchLength,
                  spokenSeconds: Double) async throws -> PitchAnalysis
+
+    /// Brain-dump mode: synthesize freeform thinking into structured ideas.
+    func synthesize(transcript: String,
+                    spokenSeconds: Double) async throws -> BrainDumpSynthesis
 }
 
 /// Shared error type for provider clients.

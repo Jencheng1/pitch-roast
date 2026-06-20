@@ -9,15 +9,17 @@ struct RecordingStage: View {
         VStack(spacing: 18) {
             Spacer(minLength: 4)
 
-            Text(app.selectedLength.title.uppercased())
+            Text(brandLabel)
                 .font(.pickleCaption(10)).tracking(1.2)
-                .foregroundStyle(Theme.brassBright)
+                .foregroundStyle(app.mode == .brainDump ? Theme.cool : Theme.brassBright)
 
-            // Timer vs target
+            // Timer (vs target for pitches)
             VStack(spacing: 2) {
                 Text(timeString(app.recorder.elapsed))
                     .font(.pickleScore(46)).foregroundStyle(.white)
-                Text("target \(timeString(TimeInterval(app.selectedLength.targetSeconds))) · \(app.recorder.remaining)s left")
+                Text(app.mode == .brainDump
+                     ? "talk freely · \(app.recorder.remaining)s left"
+                     : "target \(timeString(TimeInterval(app.selectedLength.targetSeconds))) · \(app.recorder.remaining)s left")
                     .font(.pickleCaption(11)).foregroundStyle(.white.opacity(0.5))
             }
 
@@ -38,7 +40,8 @@ struct RecordingStage: View {
                 PickleButton(title: "Discard", systemImage: "trash", style: .ghost) {
                     app.cancelRecording()
                 }
-                PickleButton(title: "Done · Analyze", systemImage: "checkmark", style: .primary) {
+                PickleButton(title: app.mode == .brainDump ? "Done · Synthesize" : "Done · Analyze",
+                             systemImage: "checkmark", style: .primary) {
                     Haptics.success()
                     app.finishRecording()
                 }
@@ -47,7 +50,20 @@ struct RecordingStage: View {
         .padding(16)
     }
 
+    private var brandLabel: String {
+        guard app.mode == .brainDump else { return app.selectedLength.title.uppercased() }
+        return app.currentDumpID != nil ? "ADDING ON" : "BRAIN DUMP"
+    }
+
     private var pacingHint: String {
+        if app.mode == .brainDump {
+            switch Int(app.recorder.elapsed) {
+            case ..<15:   return "What problem keeps nagging you?"
+            case 15..<45: return "Who feels this pain? Keep going…"
+            case 45..<90: return "Any ideas forming? Say them out loud."
+            default:      return "Ramble on — I'm connecting the dots."
+            }
+        }
         let e = Int(app.recorder.elapsed), t = app.selectedLength.targetSeconds
         switch Double(e) / Double(t) {
         case ..<0.25:  return "Open strong — what's the problem?"

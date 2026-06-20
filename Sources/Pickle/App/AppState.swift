@@ -8,8 +8,15 @@ enum PitchStage: Equatable {
     case recording
     case analyzing
     case results
+    case brainDumpResults
     case history
     case settings
+}
+
+/// Pitch practice vs. freeform brain dump — chosen on the welcome screen.
+enum AppMode: Equatable {
+    case pitch
+    case brainDump
 }
 
 /// Central app state + coordinator. Owns the recorder, the store, the analysis
@@ -23,12 +30,21 @@ final class AppState: ObservableObject {
     @Published var panelVisible = false
     @Published var expanded = false                 // taller workspace mode
     @Published var selectedLength: PitchLength = .demoDay
+    @Published var mode: AppMode = .pitch           // pitch practice vs. brain dump
 
     // Live + result
     @Published var transcriptPreview: String = ""
     @Published var result: SessionRecord?
+    @Published var brainResult: BrainDumpSynthesis? // latest brain-dump synthesis
+    @Published var brainTranscript: String = ""
+    @Published var currentDumpID: UUID?             // the brain dump being viewed
+    private var continuingDumpID: UUID?             // set while adding on to a dump
+    private var brainBaseTranscript = ""            // prior transcript when adding on
     @Published var errorMessage: String?
     @Published var isNewBest = false
+
+    /// Max recording length for a brain dump — long and unhurried.
+    private let brainDumpMaxSeconds = 600
 
     // Config — provider + keys
     @Published var provider: AnalysisProviderKind
@@ -60,6 +76,7 @@ final class AppState: ObservableObject {
 
     let recorder = AudioRecorder()
     let store = SessionStore()
+    let brainStore = BrainDumpStore()
     let voice = VoiceCoach()
 
     private var analyzeTask: Task<Void, Never>?
@@ -78,6 +95,7 @@ final class AppState: ObservableObject {
         // doesn't bridge nested ObservableObjects automatically.
         for child in [recorder.objectWillChange.eraseToAnyPublisher(),
                       store.objectWillChange.eraseToAnyPublisher(),
+                      brainStore.objectWillChange.eraseToAnyPublisher(),
                       voice.objectWillChange.eraseToAnyPublisher()] {
             child.sink { [weak self] _ in self?.objectWillChange.send() }
                 .store(in: &cancellables)
@@ -99,6 +117,8 @@ final class AppState: ObservableObject {
             case 50..<75: return .skeptical
             default:     return .roasting
             }
+        case .brainDumpResults:
+            return (brainResult?.topIdea?.conviction ?? 0) >= 70 ? .impressed : .curious
         case .history:   return .curious
         case .settings:  return .idle
         }
@@ -159,13 +179,48 @@ final class AppState: ObservableObject {
     // MARK: Recording flow
 
     func startRecording() {
+        mode = .pitch
+        beginCapture(maxSeconds: selectedLength.maxSeconds)
+    }
+
+    /// Begin a fresh, standalone brain dump.
+    func startBrainDump() {
+        mode = .brainDump
+        currentDumpID = nil
+        continuingDumpID = nil
+        brainBaseTranscript = ""
+        beginCapture(maxSeconds: brainDumpMaxSeconds)
+    }
+
+    /// Add more thinking onto an existing brain dump — records again, then
+    /// re-synthesizes over the full accumulated transcript.
+    func continueBrainDump(_ record: BrainDumpRecord) {
+        mode = .brainDump
+        currentDumpID = record.id
+        continuingDumpID = record.id
+        brainBaseTranscript = record.transcript
+        brainResult = record.synthesis
+        brainTranscript = record.transcript
+        beginCapture(maxSeconds: brainDumpMaxSeconds)
+    }
+
+    /// Add more to the brain dump currently on screen (results action bar).
+    func addMoreToCurrent() {
+        if let id = currentDumpID, let rec = brainStore.record(id) {
+            continueBrainDump(rec)
+        } else {
+            startBrainDump()
+        }
+    }
+
+    private func beginCapture(maxSeconds: Int) {
         guard canAnalyze else { navigate(to: .settings); showPanel(); return }
         voice.stop()
         errorMessage = nil
         transcriptPreview = ""
-        navStack = []                 // a new pitch starts a fresh flow
+        navStack = []                 // a new run starts a fresh flow
         Task {
-            let ok = await recorder.start(maxSeconds: selectedLength.maxSeconds)
+            let ok = await recorder.start(maxSeconds: maxSeconds)
             if ok {
                 stage = .recording
             } else {
@@ -179,14 +234,22 @@ final class AppState: ObservableObject {
         stage = .welcome
     }
 
-    /// Stop recording and kick off transcription + analysis.
+    /// Stop recording and kick off the right pipeline for the current mode.
     func finishRecording() {
         guard let url = recorder.stop() else { stage = .welcome; return }
         let seconds = recorder.elapsed
-        let length = selectedLength
         stage = .analyzing
-
         let openAIKey = Keychain.load(.openAI)
+
+        if mode == .brainDump {
+            runBrainDump(url: url, seconds: seconds, openAIKey: openAIKey)
+        } else {
+            runPitchAnalysis(url: url, seconds: seconds, openAIKey: openAIKey)
+        }
+    }
+
+    private func runPitchAnalysis(url: URL, seconds: Double, openAIKey: String?) {
+        let length = selectedLength
         analyzeTask?.cancel()
         analyzeTask = Task {
             let analyzer = PitchAnalyzer(
@@ -207,6 +270,53 @@ final class AppState: ObservableObject {
                 navStack = []           // a freshly analyzed verdict has no "back"
                 stage = .results
                 if speakFeedback { voice.speak(record.analysis.roast, openAIKey: openAIKey) }
+                try? FileManager.default.removeItem(at: url)
+            } catch {
+                guard !Task.isCancelled else { return }
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                stage = .welcome
+            }
+        }
+    }
+
+    private func runBrainDump(url: URL, seconds: Double, openAIKey: String?) {
+        let base = brainBaseTranscript
+        let continuingID = continuingDumpID
+        analyzeTask?.cancel()
+        analyzeTask = Task {
+            let analyzer = PitchAnalyzer(
+                transcriber: makeTranscriber(openAIKey: openAIKey),
+                provider: makeProvider(openAIKey: openAIKey)
+            )
+            do {
+                let (transcript, synthesis) = try await analyzer.brainDump(
+                    audioURL: url, spokenSeconds: seconds, priorTranscript: base,
+                    onTranscript: { [weak self] text in
+                        Task { @MainActor in self?.transcriptPreview = text }
+                    })
+                guard !Task.isCancelled else { return }
+
+                if let id = continuingID, let existing = brainStore.record(id) {
+                    // Append to the existing dump, preserving its folder + origin date.
+                    var updated = existing
+                    updated.transcript = transcript
+                    updated.synthesis = synthesis
+                    updated.durationSeconds += seconds
+                    brainStore.update(updated)
+                    currentDumpID = id
+                } else {
+                    let rec = BrainDumpRecord(
+                        durationSeconds: seconds, transcript: transcript, synthesis: synthesis)
+                    brainStore.add(rec)
+                    currentDumpID = rec.id
+                }
+                continuingDumpID = nil
+                brainBaseTranscript = ""
+                brainTranscript = transcript
+                brainResult = synthesis
+                navStack = []
+                stage = .brainDumpResults
+                if speakFeedback { voice.speak(synthesis.headline, openAIKey: openAIKey) }
                 try? FileManager.default.removeItem(at: url)
             } catch {
                 guard !Task.isCancelled else { return }
@@ -243,9 +353,34 @@ final class AppState: ObservableObject {
         navigate(to: .results)
     }
 
+    /// Reopen a saved brain dump from history.
+    func openBrainDump(_ record: BrainDumpRecord) {
+        brainResult = record.synthesis
+        brainTranscript = record.transcript
+        currentDumpID = record.id
+        mode = .brainDump
+        navigate(to: .brainDumpResults)
+    }
+
     func practiceAgain() {
         voice.stop(); result = nil; isNewBest = false
+        mode = .pitch
         navStack = []; stage = .welcome          // start a fresh flow
+    }
+
+    /// Start another brain dump from scratch.
+    func newBrainDump() {
+        voice.stop(); brainResult = nil; brainTranscript = ""
+        currentDumpID = nil; continuingDumpID = nil; brainBaseTranscript = ""
+        mode = .brainDump
+        navStack = []; stage = .welcome
+    }
+
+    /// Bridge from a brain dump into pitch practice (e.g. on the best idea).
+    func practiceAPitch() {
+        voice.stop()
+        mode = .pitch
+        navStack = []; stage = .welcome
     }
 
     /// Re-speak the current roast (the speaker button on the results screen).

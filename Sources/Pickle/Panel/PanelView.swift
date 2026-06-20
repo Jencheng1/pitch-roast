@@ -50,10 +50,11 @@ struct PanelView: View {
 
     private var subtitle: String {
         switch app.stage {
-        case .welcome:   return "your tiny investor"
-        case .recording: return "listening…"
-        case .analyzing: return "thinking…"
+        case .welcome:   return app.mode == .brainDump ? "think out loud" : "your tiny investor"
+        case .recording: return app.mode == .brainDump ? "all ears…" : "listening…"
+        case .analyzing: return app.mode == .brainDump ? "connecting dots…" : "thinking…"
         case .results:   return "the verdict"
+        case .brainDumpResults: return "your ideas"
         case .history:   return "your progress"
         case .settings:  return "setup"
         }
@@ -80,6 +81,7 @@ struct PanelView: View {
             case .recording: RecordingStage()
             case .analyzing: AnalyzingStage()
             case .results:   ResultsStage()
+            case .brainDumpResults: BrainDumpResultsStage()
             case .history:   HistoryStage()
             case .settings:  SettingsStage()
             }

@@ -37,4 +37,24 @@ struct PitchAnalyzer {
             analysis: analysis
         )
     }
+
+    /// Brain-dump pipeline: audio → transcript → synthesized ideas. When
+    /// `priorTranscript` is non-empty (adding on to an existing dump), the new
+    /// transcript is appended and the synthesis runs over the full accumulated
+    /// thinking. Returns the combined transcript.
+    func brainDump(audioURL: URL,
+                   spokenSeconds: Double,
+                   priorTranscript: String = "",
+                   onTranscript: ((String) -> Void)? = nil) async throws -> (String, BrainDumpSynthesis) {
+        let fresh = try await transcriber.transcribe(url: audioURL)
+        let trimmed = fresh.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 4 else { throw AnalyzerError.emptyTranscript }
+
+        let combined = priorTranscript.isEmpty ? trimmed : priorTranscript + "\n\n" + trimmed
+        onTranscript?(combined)
+
+        let synthesis = try await provider.synthesize(
+            transcript: combined, spokenSeconds: spokenSeconds)
+        return (combined, synthesis)
+    }
 }

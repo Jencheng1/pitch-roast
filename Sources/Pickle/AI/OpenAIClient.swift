@@ -2,8 +2,8 @@ import Foundation
 
 /// The default analysis provider. Talks to the OpenAI Chat Completions API over
 /// raw `URLSession` (no official Swift SDK), using `gpt-4o` with **strict
-/// JSON-schema structured outputs** so the response decodes straight into
-/// `PitchAnalysis`. Reuses the same Pickle persona + schema as the Claude path.
+/// JSON-schema structured outputs**. Powers both the pitch analysis and the
+/// brain-dump synthesis — same engine, different schema + persona.
 struct OpenAIClient: AnalysisProvider {
     var apiKey: String?
     var model = "gpt-4o"
@@ -12,23 +12,40 @@ struct OpenAIClient: AnalysisProvider {
     func analyze(transcript: String,
                  length: PitchLength,
                  spokenSeconds: Double) async throws -> PitchAnalysis {
+        let text = try await complete(
+            system: PicklePrompts.system,
+            user: PicklePrompts.userMessage(transcript: transcript, length: length, spokenSeconds: spokenSeconds),
+            schemaName: "pitch_analysis",
+            schema: AnalysisSchema.object)
+        return try Self.decode(PitchAnalysis.self, from: text)
+    }
+
+    func synthesize(transcript: String,
+                    spokenSeconds: Double) async throws -> BrainDumpSynthesis {
+        let text = try await complete(
+            system: BrainDumpPrompts.system,
+            user: BrainDumpPrompts.userMessage(transcript: transcript, spokenSeconds: spokenSeconds),
+            schemaName: "brain_dump",
+            schema: BrainDumpSchema.object)
+        return try Self.decode(BrainDumpSynthesis.self, from: text)
+    }
+
+    // MARK: Request
+
+    private func complete(system: String, user: String,
+                          schemaName: String, schema: Any) async throws -> String {
         guard let apiKey, !apiKey.isEmpty else { throw ProviderError.missingKey("OpenAI") }
 
         let body: [String: Any] = [
             "model": model,
             "max_tokens": 8_000,
             "messages": [
-                ["role": "system", "content": PicklePrompts.system],
-                ["role": "user", "content": PicklePrompts.userMessage(
-                    transcript: transcript, length: length, spokenSeconds: spokenSeconds)]
+                ["role": "system", "content": system],
+                ["role": "user", "content": user]
             ],
             "response_format": [
                 "type": "json_schema",
-                "json_schema": [
-                    "name": "pitch_analysis",
-                    "strict": true,
-                    "schema": AnalysisSchema.object
-                ]
+                "json_schema": ["name": schemaName, "strict": true, "schema": schema]
             ]
         ]
 
@@ -44,12 +61,13 @@ struct OpenAIClient: AnalysisProvider {
         guard (200..<300).contains(http.statusCode) else {
             throw ProviderError.http(http.statusCode, Self.apiMessage(from: data))
         }
-        return try Self.decodeAnalysis(from: data)
+        return try Self.contentText(from: data)
     }
 
     // MARK: Parsing
 
-    static func decodeAnalysis(from data: Data) throws -> PitchAnalysis {
+    /// Extracts the model's JSON text from a chat-completions response.
+    static func contentText(from data: Data) throws -> String {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = root["choices"] as? [[String: Any]],
               let message = choices.first?["message"] as? [String: Any]
@@ -58,14 +76,16 @@ struct OpenAIClient: AnalysisProvider {
         if let refusal = message["refusal"] as? String, !refusal.isEmpty {
             throw ProviderError.refusal(refusal)
         }
-        guard let content = message["content"] as? String, let payload = content.data(using: .utf8) else {
+        guard let content = message["content"] as? String, !content.isEmpty else {
             throw ProviderError.noContent
         }
-        do {
-            return try JSONDecoder().decode(PitchAnalysis.self, from: payload)
-        } catch {
-            throw ProviderError.decode(error.localizedDescription)
-        }
+        return content
+    }
+
+    static func decode<T: Decodable>(_ type: T.Type, from text: String) throws -> T {
+        guard let payload = text.data(using: .utf8) else { throw ProviderError.noContent }
+        do { return try JSONDecoder().decode(T.self, from: payload) }
+        catch { throw ProviderError.decode(error.localizedDescription) }
     }
 
     static func apiMessage(from data: Data) -> String {

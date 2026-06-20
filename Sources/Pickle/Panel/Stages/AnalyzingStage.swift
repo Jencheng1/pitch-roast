@@ -6,7 +6,7 @@ struct AnalyzingStage: View {
     @EnvironmentObject private var app: AppState
     @State private var thoughtIndex = 0
 
-    private let thoughts = [
+    private let pitchThoughts = [
         "Reading between your filler words…",
         "Checking if the problem is actually a problem…",
         "Pressure-testing the market size…",
@@ -14,6 +14,14 @@ struct AnalyzingStage: View {
         "Drafting the questions I'd ask in the room…",
         "Deciding how brutal to be…"
     ]
+    private let brainThoughts = [
+        "Replaying what you said…",
+        "Pulling the ideas out of the noise…",
+        "Spotting the threads you keep returning to…",
+        "Ranking which one I'd actually chase…",
+        "Sketching a pitch angle to try next…"
+    ]
+    private var thoughts: [String] { app.mode == .brainDump ? brainThoughts : pitchThoughts }
 
     var body: some View {
         VStack(spacing: 18) {
