@@ -53,7 +53,6 @@ struct BrainDumpResultsStage: View {
         ideas(s)
         bestBet(s)
         if let l = s.landscape { landscape(l).id("landscape") }
-        themes(s)
         bulletCard("Pains worth chasing", "person.crop.circle.badge.exclamationmark", Theme.warm, s.painPoints)
         bulletCard("Open questions", "questionmark.bubble.fill", Theme.brass, s.openQuestions)
         nextSteps(s)
@@ -334,27 +333,6 @@ struct BrainDumpResultsStage: View {
             s.removeFirst(prefix.count)
         }
         return s.split(separator: "/").first.map(String.init) ?? s
-    }
-
-    // MARK: Themes
-
-    private func themes(_ s: BrainDumpSynthesis) -> some View {
-        Group {
-            if !s.themes.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    SectionLabel(title: "Threads you kept circling", systemImage: "point.3.connected.trianglepath.dotted", tint: Theme.cool)
-                    ForEach(s.themes) { theme in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(theme.title).font(.pickleHeadline(12)).foregroundStyle(.white)
-                            Text(theme.detail).font(.pickleBody(12)).foregroundStyle(.white.opacity(0.68))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                .padding(12).glassCard()
-            }
-        }
     }
 
     private func bulletCard(_ title: String, _ icon: String, _ tint: Color, _ items: [String]) -> some View {
